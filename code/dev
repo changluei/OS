@@ -8,17 +8,17 @@ if [[ $# -eq 0 ]]; then
 fi
 lab_action="$1"
 shift
-lab_tty=()
-if [[ ! -t 0 || ! -t 1 ]]; then lab_tty=(-T); fi
+lab_exec=(exec)
+if [[ ! -t 0 || ! -t 1 ]]; then lab_exec+=(-T); fi
 case "$lab_action" in
     setup) "${compose[@]}" up -d --build ;;
     stop) "${compose[@]}" down ;;
-    build) "${compose[@]}" exec "${lab_tty[@]}" lab make "$@" ;;
-    qemu|debug) "${compose[@]}" exec "${lab_tty[@]}" lab make "$lab_action" "$@" ;;
-    gdb) "${compose[@]}" exec "${lab_tty[@]}" lab make GDB=gdb-multiarch gdb "$@" ;;
-    make) "${compose[@]}" exec "${lab_tty[@]}" lab make "$@" ;;
+    build) "${compose[@]}" "${lab_exec[@]}" lab make "$@" ;;
+    qemu|debug) "${compose[@]}" "${lab_exec[@]}" lab make "$lab_action" "$@" ;;
+    gdb) "${compose[@]}" "${lab_exec[@]}" lab make GDB=gdb-multiarch gdb "$@" ;;
+    make) "${compose[@]}" "${lab_exec[@]}" lab make "$@" ;;
     verify) "${compose[@]}" exec -T lab bash environment/verify.sh ;;
-    shell) "${compose[@]}" exec "${lab_tty[@]}" lab bash ;;
+    shell) "${compose[@]}" "${lab_exec[@]}" lab bash ;;
     doctor)
         "${compose[@]}" exec -T lab sh -c '
             uname -m
