@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+lab_code_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+compose=(docker compose -f "$lab_code_dir/environment/compose.yaml")
+if [[ $# -eq 0 ]]; then
+    echo "用法: ./dev setup|build|qemu|debug|gdb|verify|shell|doctor|stop|make [参数...]"
+    exit 0
+fi
+lab_action="$1"
+shift
+lab_tty=()
+if [[ ! -t 0 || ! -t 1 ]]; then lab_tty=(-T); fi
+case "$lab_action" in
+    setup) "${compose[@]}" up -d --build ;;
+    stop) "${compose[@]}" down ;;
+    build) "${compose[@]}" exec "${lab_tty[@]}" lab make "$@" ;;
+    qemu|debug) "${compose[@]}" exec "${lab_tty[@]}" lab make "$lab_action" "$@" ;;
+    gdb) "${compose[@]}" exec "${lab_tty[@]}" lab make GDB=gdb-multiarch gdb "$@" ;;
+    make) "${compose[@]}" exec "${lab_tty[@]}" lab make "$@" ;;
+    verify) "${compose[@]}" exec -T lab bash environment/verify.sh ;;
+    shell) "${compose[@]}" exec "${lab_tty[@]}" lab bash ;;
+    doctor)
+        "${compose[@]}" exec -T lab sh -c '
+            uname -m
+            riscv64-unknown-elf-gcc --version | head -1
+            riscv64-unknown-elf-ld --version | head -1
+            qemu-system-riscv64 --version | head -1
+            gdb-multiarch --version | head -1
+            make --version | head -1
+        ' ;;
+    *) echo "未知操作: $lab_action" >&2; exit 2 ;;
+esac
