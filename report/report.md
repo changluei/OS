@@ -63,14 +63,14 @@ Lab 1 已提供最小内核的实现。本次实验围绕入口代码分析和�
 
 **开发与运行环境**
 
-三位成员的开发环境分别记录如下。macOS 使用 Ubuntu Docker 容器，Windows 使用 WSL2；第五章的启动截图展示 OpenSBI v0.4 环境的运行结果。
+三位成员的开发环境分别记录如下，Windows 使用 WSL2。macOS使用docker。本实验使用 QEMU 4.1.1，第五章的启动截图展示 OpenSBI v0.4 环境的运行结果。
 
 **成员 1：崔迪**
 
 | 项目 | 实际环境 |
 |------|----------|
 | 宿主机 | macOS，Apple Silicon / ARM64 |
-| 容器系统 | Ubuntu 22.04，aarch64 |
+| Linux 系统 | Ubuntu 22.04，aarch64 |
 | RISC-V 编译器 | riscv64-unknown-elf-gcc 10.2.0 |
 | RISC-V binutils | 2.35.1 |
 | 构建工具 | GNU Make 4.3 |
@@ -91,7 +91,7 @@ Lab 1 已提供最小内核的实现。本次实验围绕入口代码分析和�
 | 构建工具 | GNU Make 4.3 |
 | 模拟器 | QEMU 4.1.1，`virt` 机器 |
 | 调试器 | riscv64-unknown-elf-gdb 16.3.90.20250610-git |
-| 实际启动固件 | QEMU 内置 OpenSBI v1.0，运行时 SBI 版本 0.3 |
+| 实际启动固件 | QEMU 内置 OpenSBI v0.4，运行时 SBI 版本 0.1 |
 | 内核链接与启动地址 | `0x80200000` |
 | 版本管理 | Git，GitHub 仓库的 `lab1` 分支 |
 
@@ -209,21 +209,11 @@ cprintf
 
 
 
-#### 环境适配与问题解决
+#### 编译、运行与调试
 
-本次实验沿用课程提供的入口汇编、初始化函数和输出库，通过 Docker 配置及本地构建目标完成编译、运行和调试环境的适配。原始 `Makefile` 的启动与调试目标保持原有配置，Docker 环境使用 `environment/Makefile.local` 中的本地目标，具体调整如下：
+本次实验沿用课程提供的入口汇编、初始化函数和输出库，使用 QEMU 4.1.1 运行内核，并通过 GDB 观察启动与单步执行过程。
 
-| 改动 | 原因与结果 |
-|------|------------|
-| 添加 Dockerfile、Compose 配置和 `code/dev` | 在 Ubuntu 容器中统一编译、运行与调试工具 |
-| 在 `environment/Makefile.local` 中添加 `local-qemu` 和 `local-debug` | 使用 `-kernel $(UCOREIMG)` 加载镜像，调试目标同时添加 `-s -S` |
-| 添加 `local-gdb` 目标 | 使用容器中的 `gdb-multiarch` 加载 ELF 符号并连接 QEMU |
-| 添加 `environment/verify.sh` | 自动检查 ELF 入口、启动输出和三个关键地址断点 |
-| 在 Dockerfile 中固定 QEMU 4.1.1 | 通过源码构建统一模拟器版本，最终启动结果见第五章截图 |
-
-环境适配阶段曾使用 QEMU 6.2.0 与 OpenSBI v0.9。最初编译成功，但启动只显示固件信息；日志中 `Domain0 Next Address` 为零。改用本地目标中的 `-kernel` 参数后，内核成功输出启动字符串，GDB 也命中入口断点。该阶段的验证结果保存在 `environment/verification.txt`。最终 Docker 配置固定为 QEMU 4.1.1，本次截图记录了 OpenSBI v0.4 环境下的启动与单步调试结果。
-
-Docker 环境在 `code/` 目录中通过 `./dev build` 编译、`./dev qemu` 运行；交互调试时，在两个终端分别执行 `./dev debug` 和 `./dev gdb`。
+在 `code/` 目录中通过 `make` 编译、`make qemu` 运行；交互调试时，在两个终端分别执行 `make debug` 和 `make gdb`。
 
 ---
 
@@ -283,7 +273,7 @@ bootstacktop = 0x80203000
 
 **负责人：** 2412439-崔迪、2412852-梁靖泽、2412819-李子谦
 
-本次交互调试使用 OpenSBI v0.4，运行时 SBI 版本为 0.1。以下复位指令、启动数据和寄存器值均取自第五章的测试截图；环境适配阶段的 OpenSBI v0.9 日志另用于记录固件入口断点验证。
+本次交互调试使用 QEMU 4.1.1 与 OpenSBI v0.4，运行时 SBI 版本为 0.1。以下复位指令、启动数据和寄存器值均取自第五章的测试截图。
 
 #### 调试过程
 
@@ -312,12 +302,12 @@ QEMU 使用 `-S` 在启动时暂停 CPU，使用 `-s` 提供 1234 端口的 GDB 
 (gdb) p $ra == $entry_ra
 ```
 
-关键观察结果如下，固件入口断点取自环境适配阶段的验证日志，其余结果均有本次截图记录：
+关键观察结果如下：
 
 | 阶段 | PC | 观察 |
 |------|----|------|
 | 复位暂停 | `0x1000` | 尚未执行内核，位于 QEMU 复位 ROM |
-| 固件入口断点（环境适配日志） | `0x80000000` | 开始执行 OpenSBI；本次启动截图中的 Firmware Base 也为该地址 |
+| 固件入口地址 | `0x80000000` | 复位 ROM 启动数据中的跳转地址与启动截图中的 Firmware Base 一致 |
 | 内核入口断点 | `0x80200000` | 停在 `kern_entry`，尚未初始化内核栈 |
 | 栈设置完成 | `0x80200008` | `sp = 0x80203000`，下一步执行 tail |
 | 转入 C 入口 | `0x8020000a` | 进入 `kern_init`，本次跳转没有改变 `ra` |
@@ -355,7 +345,7 @@ QEMU 使用 `-S` 在启动时暂停 CPU，使用 `-s` 提供 1234 端口的 GDB 
 
 `0x1018` 存放固件入口地址，`0x1020` 开始存放设备树头数据。这些内容属于启动数据，分析复位流程时需与前面的可执行指令区分。
 
-OpenSBI 随后完成机器态初始化，将控制权移交给 `0x80200000` 的 S 模式内核。本次 `kern_entry` 断点直接验证了内核开始执行；环境适配阶段的日志也记录了 `Domain0 Next Address = 0x80200000` 和 `Domain0 Next Mode = S-mode`。
+OpenSBI 随后完成机器态初始化，将控制权移交给 `0x80200000` 的 S 模式内核。本次 `kern_entry` 断点直接验证了内核开始执行。
 
 #### 关于观察内核加载的说明
 
@@ -387,20 +377,20 @@ Runtime SBI Version : 0.1
 (THU.CST) os is loading ...
 ```
 
-内核输出后进入 `kern_init()` 中的无限循环。交互运行使用 QEMU 退出组合键结束；环境验证脚本使用 `timeout` 在限定时间后结束模拟器进程。
+内核输出后进入 `kern_init()` 中的无限循环。交互运行使用 QEMU 退出组合键结束。
 
 **调试验证**
 
-本次 GDB 截图验证了复位 ROM、内核入口、栈指针初始化及转入 `kern_init` 的过程。环境适配阶段的 [验证记录](../code/environment/verification.txt) 使用 QEMU 6.2.0 与 OpenSBI v0.9，另记录了复位 ROM、OpenSBI 和内核入口三个阶段。
+本次 GDB 截图验证了复位 ROM、内核入口、栈指针初始化及转入 `kern_init` 的过程。
 
 | 检查项目 | 结果 |
 |----------|------|
 | 交叉编译与 ELF 入口检查 | 通过 |
 | QEMU 启动字符串 | 通过 |
 | GDB 复位地址与内核入口断点 | 通过，本次截图记录 |
-| GDB 固件入口断点 | 通过，环境适配日志记录 |
+| 固件入口地址核对 | 通过，复位 ROM 启动数据与启动截图一致 |
 | 栈指针初始化与尾调用单步观察 | 通过 |
-| `make grade` | 未执行：本实验代码未提供 `tools/grade.sh`，验证采用 ELF 检查、QEMU 启动及 GDB 调试 |
+| `make grade` | 本实验代码未提供 `tools/grade.sh`，验证采用 ELF 检查、QEMU 启动及 GDB 调试 |
 
 **测试截图：**
 
@@ -449,14 +439,14 @@ Runtime SBI Version : 0.1
 
 ### AI 协作开发的经验
 
-本次协作中，AI 帮助我们梳理入口汇编、链接脚本和输出调用链，并整理了环境配置与调试步骤。最终结论通过源代码、ELF 信息、启动输出和寄存器变化逐项核对。例如，编译生成镜像后，QEMU 曾只输出固件信息；检查 OpenSBI 的下一阶段地址后，我们定位了启动参数问题，并通过启动字符串和入口断点验证了修正结果。
+本次协作中，AI 帮助我们梳理入口汇编、链接脚本和输出调用链，并整理了环境配置与调试步骤。最终结论通过源代码、ELF 信息、启动输出和寄存器变化逐项核对。
 
-调试还使我们认识到，伪指令的实际展开取决于编译和链接结果，固件版本也会影响复位代码及初始寄存器值。我们以本次 ELF 的反汇编和实测截图解释 `la` 与 `tail`，分别记录环境适配日志和最终调试数据，使源码分析与验证结果相互对应。
+调试还使我们认识到，伪指令的实际展开取决于编译和链接结果，固件版本也会影响复位代码及初始寄存器值。我们以本次 ELF 的反汇编和实测截图解释 `la` 与 `tail`，使源码分析与验证结果相互对应。
 
 **参考资料：**
 
 - 课程本地指导书：Lab 0 环境搭建、Lab 1 全章及报告要求。
-- 本仓库的入口汇编、初始化代码、链接脚本、输出库及验证记录。
+- 本仓库的入口汇编、初始化代码、链接脚本及输出库。
 - [RISC-V Assembly Programmer's Manual](https://github.com/riscv-non-isa/riscv-asm-manual/blob/main/src/asm-manual.adoc)：伪指令含义参考。
 - [QEMU virt 平台文档](https://www.qemu.org/docs/master/system/riscv/virt.html)：固件与内核启动方式参考。
 - [QEMU Generic Loader 文档](https://www.qemu.org/docs/master/system/generic-loader.html)：启动时装载机制参考。
