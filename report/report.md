@@ -21,6 +21,57 @@
 | 2412819-李子谦 | 功能模块二任务一：First-Fit 分析；任务二：Best-Fit；任务三：Buddy System 及自编测试 | `code/kern/mm/best_fit_pmm.c`、`best_fit_pmm.h`；新增 `buddy_pmm.c`、`buddy_pmm.h` 和必要的 `buddy_check.c`，均位于 `code/kern/mm/` | 完成两种页分配模块，保留原有 Best-Fit 测试不变；说明 First-Fit/Best-Fit 改进空间；提交 Buddy 的实现与测试两份提示词、测试结果和边界分析 |
 | 2412852-梁靖泽 | 功能模块二任务四：SLUB 内存对象分配及自编测试 | 新增 `code/kern/mm/slub.c`、`slub.h`、`slub_check.c` | 基于 `alloc_pages()` / `free_pages()` 实现不同大小对象的分配和释放；提交实现与测试两份提示词、测试结果和边界分析 |
 
+#### 功能实现顺序与依赖（DAG）
+
+下图安排本组的开发与验收顺序。实线表示下游接入或验证的前置条件；虚线表示同一负责人的工作优先级。每个节点均标注负责人，完成状态见节点说明和第五章验证表。
+
+```mermaid
+flowchart TB
+    S["确认公共接口与文件边界<br/>崔迪牵头，全组确认"]
+    I["物理内存初始化 page_init（已完成）<br/>崔迪"]
+    V["初始化独立验证（First-Fit，已通过）<br/>边界、启动、自检与页表状态<br/>崔迪"]
+    F["分析 First-Fit 与 pmm_manager 接口<br/>李子谦"]
+    B["实现 Best-Fit，保留原有测试<br/>李子谦"]
+    U["编写 Buddy 模块与自编测试<br/>李子谦"]
+    L["编写 SLUB 模块与自编测试<br/>梁靖泽"]
+    R["形成可运行基础版本<br/>初始化与 Best-Fit 接入、启动、自检及课程评分<br/>崔迪主责，李子谦协助"]
+    UT["Buddy 独立配置接入与验证<br/>李子谦主测，崔迪负责公共接入"]
+    LT["SLUB 接入与对象分配、释放及回收验证<br/>梁靖泽主测，崔迪负责公共接入"]
+    G["GDB 页表翻译与 TLB 调试（已完成）<br/>崔迪"]
+    Z["全功能复核、报告与提示词汇总<br/>崔迪汇总，全组审阅"]
+
+    S --> I
+    S --> F
+    S --> L
+    F --> B
+    B -.->|先交付 Best-Fit，再推进 Buddy| U
+    I --> R
+    B --> R
+    U --> UT
+    R --> UT
+    L --> LT
+    R --> LT
+    I --> V
+    V --> G
+    UT --> Z
+    LT --> Z
+    G --> Z
+
+    classDef cui fill:#e8f1ff,stroke:#3973b9,color:#18324f;
+    classDef li fill:#e8f5e9,stroke:#46834b,color:#203e23;
+    classDef liang fill:#fff3df,stroke:#b87a23,color:#54380e;
+    classDef joint fill:#f1ecfa,stroke:#8260a7,color:#39274f;
+    class I,V,G cui;
+    class F,B,U li;
+    class L liang;
+    class S,R,UT,LT,Z joint;
+```
+
+- **第一阶段可并行开发：** 崔迪完成初始化，李子谦分析 First-Fit 并实现 Best-Fit，梁靖泽编写 SLUB 及测试。各自先确定 spec、接口和测试方案，并同步记录个人草稿。
+- **基础版本需要两项汇合：** `page_init()` 与 Best-Fit 实现完成后，由崔迪统一接入并验证。默认 Best-Fit 构建仍会编译未完成的 `best_fit_pmm.c`。新增的显式 `PMM=first_fit` 配置可以先验证初始化并开展 GDB 调试；最终课程基线仍需等 Best-Fit 实现完成后汇合。
+- **基础版本完成后分路验收：** Buddy、SLUB 按图接入最终基线；GDB 调试可在 First-Fit 初始化验证通过后提前开展。Buddy 与 SLUB 相互独立，SLUB 通过公共页面分配接口工作；最终默认运行和课程评分保持使用 Best-Fit。公共接入改动仍由崔迪集中处理。
+- **报告随开发记录，最后统一汇总：** 模块实现者提交实际提示词、迭代过程、测试记录及个人报告草稿。内存探测 Challenge 由崔迪选做，完成后补入报告，不作为主流程的前置条件。
+
 **公共文件与接口约定**
 
 1. 李子谦、梁靖泽只修改各自负责的实现、头文件及自编测试；需要修改 `pmm.c`、`init.c`、`Makefile`、`pmm.h` 或 `memlayout.h` 时，先把接口需求交给崔迪统一接入。
@@ -63,7 +114,7 @@
 
 | 成员 | AI 编程工具 | 底层模型 | 备注 |
 |------|------------|---------|------|
-| 2412439-崔迪 | [待填写实际工具] | [待填写实际模型] | [待填写] |
+| 2412439-崔迪 | Codex（本次会话） | 待按客户端显示核实 | 完成初始化、测试工具与 GDB 调试记录 |
 | 2412819-李子谦 | | | |
 | 2412852-梁靖泽 | | | |
 
@@ -72,57 +123,82 @@
 - **AI 编程工具**：指具体使用的终端工具、编辑器插件、桌面应用或浏览器界面
 - **底层模型**：指该工具使用的大语言模型及版本
 
+**崔迪本轮实测环境：** macOS / ARM64 宿主机，Ubuntu 22.04 / aarch64 的原有 OS 实验容器；RISC-V GCC 10.2.0，QEMU 4.1.1，GDB 12.1，内置 OpenSBI v0.4。容器补充了 `python3`、`libc6-dev`、`bc`。另外两位成员的实际环境由本人填写。
+
 ---
 
 ## 三、实验整体逻辑分析
 
 ### 3.1 本章节的逻辑主线
 
-[崔迪填写：结合启动分页、DTB 内存信息、`Page` 描述符和 `pmm_manager`，用自己的话说明各阶段的关系。]
+本章把一段由硬件描述的 RAM 转换为可分配的物理页。`entry.S` 先建立启动页表并开启 Sv39，使 C 初始化函数运行在内核虚拟地址空间；随后 DTB 解析提供 RAM 范围，`page_init()` 在内核镜像之后安排 `Page` 描述符，保留已有占用并登记空闲页面。页面分配由 `pmm_manager` 的函数指针接口统一提供，后续可接入 Best-Fit 或 Buddy；SLUB 在页面分配之上组织不同大小的内存对象。
 
 ### 3.2 功能的逐步实现
 
-[崔迪填写：说明 `pmm_init() → init_pmm_manager() → page_init() → init_memmap() → alloc_pages()/free_pages()` 的初始化与使用顺序，以及 Best-Fit、Buddy、SLUB 分别处于哪一层。]
+1. **启动映射与硬件信息。** 汇编入口保存 hartid 和 DTB 地址、设置 SATP，随后进入 C 入口清理 `.bss` 并解析 DTB。
+2. **选择管理器。** `pmm_init()` 先调用 `init_pmm_manager()` 初始化分配器内部状态；本轮验证显式选择已有 First-Fit，最终默认配置为待完成的 Best-Fit。
+3. **建立可分配页面。** `page_init()` 建立描述符数组、保留内核与元数据，借助 `init_memmap()` 登记完整空闲页面。
+4. **分配、回收和自检。** `alloc_pages()`、`free_pages()` 统一转交当前管理器，`check_alloc_page()` 调用其自检。Best-Fit 与 Buddy 属于这一层，SLUB 则调用这组接口取得底层页面。
+5. **观察地址翻译。** 内核 GDB 检查页表和页状态，宿主机 GDB 在 QEMU 源码中跟踪一次真实数据读取的 TLB 未命中、页表解析与缓存填充。开发依赖与可并行任务见前面的 DAG。
 
 ---
 
 ## 四、实验内容与实现
 
-本节按指导书练习顺序填写。当前仅导入课程初始框架并确定分工，所有实现、提示词和验证结论均待实际完成后补充。
+本节按指导书练习顺序填写。崔迪负责的初始化与独立验证已完成；Best-Fit、Buddy、SLUB 仍由对应负责人实现，最终集成与课程评分尚待开展。
 
 ### 功能模块一：物理内存探测与页描述符初始化
 
 **负责人：** 2412439-崔迪
 
+**状态：** 已实现，已通过独立边界测试、First-Fit 配置的 QEMU 启动与分配自检、GDB 页面状态检查。
+
 #### 模块功能描述
 
-**需要实现/修改的文件：** `code/kern/mm/pmm.c`
+**实际修改的代码文件：** `code/kern/mm/pmm.c`、`code/Makefile`。新增验证工具为 `code/tools/check_page_init.py`、`code/tools/verify_init.sh`。完整修改范围见 [崔迪的文件改动记录](changes/2412439-initialization.md)。
 
 **核心函数与接口：**
 
 ```c
 static void page_init(void);
+static void init_pmm_manager(void);
 ```
 
 **功能说明与 spec：**
 
-[待负责人按实际实现填写。要求：读取 DTB 内存信息，设置 va_pa_offset、npage、pages；保留 OpenSBI、内核与描述符数组；正确处理内存上界、地址转换、页面对齐和无完整空闲页的情况。]
+1. 通过 `get_memory_base()`、`get_memory_size()` 使用现有 DTB 解析结果；零地址、零长度和范围加法溢出均触发 `panic()`。
+2. 把 DTB 末端限制在框架支持的 `PHYSICAL_MEMORY_END` 以内，再向下按页对齐。设置固定虚实地址偏移；确认 RAM 覆盖内核起点及内核末端。
+3. `npage` 表示可管理物理页号的排他上界，实际描述符数量为 `npage - nbase`。`pages` 位于虚拟地址 `end` 之后并向上按页对齐；使用 `PADDR()` 计算其物理位置。
+4. 检查描述符数组能完整放入可管理内存后，初始化所有描述符：保留标志置位、引用计数和块长度清零、链表节点自指。
+5. 描述符数组末端再次向上按页对齐，得到空闲起点。只有空闲起点小于可管理末端时才调用 `init_memmap()`；OpenSBI、内核、描述符及不完整尾页均不会进入空闲区。
+6. `Makefile` 默认 `PMM=best_fit`，等待 Best-Fit 实现接入；显式 `PMM=first_fit` 使用课程已提供的 First-Fit，排除未完成的 Best-Fit 源文件。配置内容戳确保切换模式时重新编译对象文件，防止复用旧宏配置。
 
 #### 最终提示词
 
-[待填写：实现提示词；测试提示词如有。完整原始交互按时间顺序保存在本人草稿中，再由崔迪汇总。]
+本次由 Codex 根据既有分工、课程约束和上述 spec 完成实现与验证，用户原始请求为：
+
+```text
+OK，那先把我能做的部分你先完成，记得记录一下我的改动文件的范围
+```
+
+完整实现、验证过程与原始请求见 [崔迪个人记录](members/2412439-崔迪.md)。
 
 #### 实现迭代过程
 
-- 实际迭代次数：待记录。
-- 遇到的问题、错误信息与原因：待记录。
-- 提示词和代码的修正策略：待记录。
-- 最终结果：尚未实现、尚未测试；完成后据实填写。
-- 关键改进点：待总结。
+初始化实现的首版通过所覆盖的边界用例和 QEMU 分配自检。验证流程中发现并处理了以下问题：
+
+- 本机 Docker 服务未运行，现有容器缺少 `python3`、本机 C 头文件和 `bc`；启动已有 OS 实验容器并补齐容器内依赖。
+- 默认构建包含其他成员尚未完成的 Best-Fit 文件；增加显式 First-Fit 验证配置，保留最终 Best-Fit 默认配置和课程测试原样。
+- GDB 把最高位为 1 的 SATP 显示为负数；验证脚本将其规范为 64 位无符号值后再检查 MODE 和 PPN。
+- 验证脚本最初在 GDB 失败时提前退出、清理临时文件，导致错误输出丢失；改为先保留并打印错误输出，再返回失败状态。
 
 #### 测试与问题回答
 
-[待填写：记录内存布局、保留页和空闲页的检查结果，解释设备树异常及边界的处理。]
+`python3 tools/check_page_init.py` 编译真实 `page_init()` 函数体进行宿主机测试，仅替换链接器 `end` 符号声明并模拟 DTB、控制台和空闲区注册。12 个用例均通过，覆盖正常 RAM、未对齐末端、128 MiB 管理上限、无完整空闲页、非法范围、溢出和描述符空间不足；它不替代 RISC-V 运行测试。
+
+`bash tools/verify_init.sh` 在 Linux 容器中验证真实内核：First-Fit 构建、64/128/256 MiB 三种 RAM 的启动与原有分配自检、GDB 保留页及页表状态检查。分配器切换检查仅编译并检查 `pmm.o` 的管理器引用，不代表 Best-Fit 算法已实现。
+
+完整输出见 [初始化验证日志](logs/2412439-initialization.txt)。本轮未宣称课程 `make grade`、Best-Fit、Buddy 或 SLUB 已通过。
 
 ---
 
@@ -250,12 +326,64 @@ static void page_init(void);
 
 **负责人：** 2412439-崔迪
 
-[待记录调试版 QEMU 的准备、宿主机 GDB 与 RISC-V GDB 的配合方式，以及实际断点和观测结果。]
+**状态：** 已完成本轮 First-Fit 基线的真实内核和 QEMU 源码调试，完整输出见 [MMU/TLB 调试日志](logs/2412439-mmu.txt)。
 
-- 给出地址翻译的关键调用路径、分支及一次虚拟地址到物理地址的转换演示。
-- 单步解释页表遍历，定位并调试 QEMU 的 TLB 查询代码。
-- 对比 QEMU TLB 与真实 CPU TLB 的逻辑差异，可结合开启/关闭分页的访问路径分析。
-- 记录调试发现、问题情景、分析思路和与大模型的真实交互。
+#### 调试方式与复现
+
+新增 `code/tools/debug_mmu.py`。按指导书允许的条件断点方案，宿主机 GDB 直接启动 QEMU 并按目标地址暂停；另一次运行使用 RISC-V GDB 核对同一内核镜像的访存指令。两次运行分开，避免把调试器读取内存触发的翻译误认为 guest CPU 的真实访存。
+
+本次从现有 Docker 环境的 `qemu-builder` 阶段取得 QEMU 4.1.1 源码和构建目录中的未剥离二进制，放在 OS 容器的 `/tmp/qemu`。已检查构建目录文件包含 `.debug_info`、`.debug_line`；系统已安装文件的调试符号已被剥离，不能混用。
+
+```bash
+# Linux/WSL 中准备好相同版本的带符号 QEMU 构建目录后：
+cd code
+python3 tools/debug_mmu.py --qemu-source /tmp/qemu
+```
+
+具体源码准备与环境记录见 [崔迪个人记录](members/2412439-崔迪.md#qemu-源码准备与复现)。
+
+#### 关键调用路径与分支
+
+本次真实数据读取的调用栈为：
+
+```text
+TCG 生成的访存代码
+  → full_le_ldul_mmu / load_helper
+  → tlb_fill
+  → riscv_cpu_tlb_fill
+  → get_physical_address
+  → tlb_set_page / tlb_set_page_with_attrs
+```
+
+QEMU 4.1.1 的 `accel/tcg/cputlb.c:load_helper()` 通过 `tlb_index()`、`tlb_entry()` 取得软件 TLB 条目，检查 `tlb_hit()`；未命中时检查 victim TLB，仍未命中才填充。实测目标页读取前的 `addr_read` 标签是旧的 `0xffffffffc0200000`，与目标页不同，因此进入上述慢路径。
+
+`target/riscv/cpu_helper.c:get_physical_address()` 根据特权与 SATP.MODE 选择直通或分页路径；Sv39 下计算根表基址、VPN 索引并读取 PTE。关键分支包括 V 位是否合法、是否为下级表指针、访问权限与大页对齐检查。必要时更新 A/D 位；成功后返回物理页基址和权限，再由调用方通过 PMP 检查并填充软件 TLB。
+
+#### 实际访存与页表翻译
+
+本次内核在 `PC=0xffffffffc020028a` 执行 `lw a5,0(a4)`，读取 DTB 头部；`a4=0xffffffffc2200000`。RISC-V GDB 单步后确认读取的低 32 位为 `0xedfe0dd0`，对应内存中的 DTB 大端魔数字节 `d0 0d fe ed`。
+
+宿主机 GDB 对该地址的真实 CPU 读取暂停并单步：
+
+| 项目 | 实际值 |
+|------|--------|
+| SATP | `0x8000000000080205` |
+| 根页表物理地址 | `0x80205000` |
+| Sv39 总层数 / 当前循环 | `levels=3`，`i=0` |
+| VPN[2] / 当前 ptshift | `511` / `18` |
+| PTE 物理地址 / 内容 | `0x80205ff8` / `0x200000cf` |
+| 翻译结果 / 权限 | `PA=0x82200000` / `prot=7` |
+| 填充后的 TLB 读标签 | `0xffffffffc2200000` |
+
+根项已设置 R/W/X，是 1 GiB 叶子，本次无需继续走到下两级。QEMU 合并叶子物理页号与低位 VPN 得到 `0x82200000`，然后以 4 KiB 为粒度填充本次访问的缓存条目。通过 TLB 的 host RAM 加数读取到同样的 DTB 魔数字节，完成从 guest 指令到宿主机内存的核对。
+
+#### QEMU TLB 与硬件地址翻译的区别
+
+还在 SATP=0 时跟踪了 `0x80200000` 的取指：翻译结果为同一物理地址，QEMU 仍调用 `tlb_set_page_with_attrs()` 填充软件 TLB。软件 TLB 同时服务 guest 地址、host RAM 地址及访问属性的映射，裸地址模式下也有用途；它的 host 地址加数、缓存粒度与路径不能直接等同于真实 CPU 的微架构 TLB。
+
+#### 调试发现与 AI 协作记录
+
+本轮发现：构建目录和已安装 QEMU 的符号信息不同；1 GiB 叶子会提前结束多级页表遍历；软件 TLB 在裸地址模式下也被填充；GDB 对 SATP 的有符号显示需单独处理。Codex 帮助定位具体源码、设计条件断点、对比标签与物理地址并自动保存日志，原始任务和实际排查过程保存在个人记录中。
 
 ---
 
@@ -265,7 +393,9 @@ static void page_init(void);
 
 **问题：** 如果 OS 无法提前知道当前硬件的可用物理内存范围，有何办法获取？
 
-[选做，待回答；是否完成与加分验收结果据实记录。]
+可以约定由固件或 bootloader 提供硬件内存描述，OS 启动后解析，而无需编译时写死全部 RAM 范围。本实验中 QEMU 的 `hw/riscv/virt.c:create_fdt()` 把 RAM 基址和容量写入 `/memory@.../reg`；启动流程把 DTB 地址传给内核，`dtb_init()` 解析后由 getter 提供给 `page_init()`。
+
+更完整的平台还应处理多段 RAM、固件保留区及内存映射设备，并在登记空闲页时排除占用。本次框架只处理已提供的单段 RAM 信息，不能把“描述出的 RAM”直接等同为“全部可分配页面”。本题方案已记录，选做加分是否通过仍以助教验收为准。
 
 ---
 
@@ -275,16 +405,32 @@ static void page_init(void);
 
 | 验证内容 | 主责 | 当前状态 |
 |----------|------|----------|
-| 初始化、内存布局与页面保留 | 崔迪 | 待实现、待验证 |
-| First-Fit 分析及 Best-Fit 原有测试 | 李子谦 | 待完成、待验证 |
+| `page_init()` 12 个宿主机边界用例 | 崔迪 | 全部通过；DTB、控制台和注册接口使用测试替身 |
+| First-Fit 配置的真实 RISC-V 构建 | 崔迪 | 通过，ELF 入口为 `0xffffffffc0200000` |
+| 64/128/256 MiB QEMU 启动与原有分配自检 | 崔迪 | 全部通过；256 MiB 场景按框架上限仅管理到 `0x88000000` |
+| First-Fit/Best-Fit 配置切换后的对象引用 | 崔迪 | 通过；仅验证管理器选择及重新编译机制 |
+| GDB 描述符、保留页、空闲计数、SATP 与 Sv39 映射 | 崔迪 | 通过；真实内核运行，详见日志 |
+| First-Fit 分析及 Best-Fit 算法原有测试 | 李子谦 | First-Fit 分析待填写，Best-Fit 待实现、待验证 |
 | Buddy 自编测试与独立运行配置 | 李子谦，崔迪负责配置接入 | 待实现、待验证 |
 | SLUB 自编测试与回收检查 | 梁靖泽，崔迪负责启动接入 | 待实现、待验证 |
-| `make qemu` 启动与 `make grade` 课程评分 | 崔迪 | 尚未运行 |
-| 页表翻译与 TLB 调试演示 | 崔迪 | 尚未开展 |
+| 默认 Best-Fit 运行与 `make grade` 课程评分 | 崔迪 | 等待 Best-Fit 实现后开展 |
+| QEMU 源码中的页表翻译、TLB 未命中/填充及裸地址对比 | 崔迪 | 已通过；另用 RISC-V GDB 核对实际 DTB 读取指令 |
+
+**复现命令：** 在已安装课程工具链、QEMU、GDB、Python 3 和本机 C 编译器及头文件的 Linux/WSL 环境中执行：
+
+```bash
+cd code
+make PMM=first_fit
+make qemu PMM=first_fit
+# 退出交互 QEMU 后执行：
+bash tools/verify_init.sh
+```
+
+本机已有容器可执行 `docker exec os-labs-lab-1 bash tools/verify_init.sh`；源码调试可执行 `docker exec os-labs-lab-1 python3 tools/debug_mmu.py --qemu-source /tmp/qemu`。完整终端证据保存在 [初始化验证日志](logs/2412439-initialization.txt)，宿主机部分测试另可直接运行 `python3 code/tools/check_page_init.py`。
 
 **测试截图：**
 
-[待插入真实截图，存入 `images/`；文件名使用学号前缀。当前不引用 Lab 1 截图，也不将模板示例视为测试通过。]
+[本人后续交互复核时按课程要求补充真实截图，文件名使用学号前缀；当前证据为以上实际运行日志。]
 
 ---
 

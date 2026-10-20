@@ -5,8 +5,8 @@
 ## 当前状态
 
 - 已导入 Lab 2 的 39 个课程源码与工具文件，包括 DTB、启动分页、物理内存管理框架和评分脚本。
-- 课程框架与测试保持原样，`page_init()` 和 Best-Fit 等仍待完成；Buddy、SLUB 需要自行新增模块及测试。
-- 当前尚未完成 Lab 2 编译、运行和评分；模板、计划和初始代码不代表实现或测试已经通过。
+- 崔迪已完成 `page_init()`、独立验证配置和 GDB 页表/TLB 调试；Best-Fit、Buddy、SLUB 仍由对应成员实现。课程测试和其他成员的实现文件保持原样。
+- 显式 First-Fit 配置已通过构建、12 个初始化边界用例、64/128/256 MiB 启动自检、GDB 页面状态和 QEMU 源码调试。最终 Best-Fit 集成、课程评分及 Buddy/SLUB 验收等待对应实现完成。
 - 保留本机已有的 `code/dev` 与 `code/environment/`，它们是本地辅助文件，不属于课程源码，也不在当前仓库跟踪范围内。原 Lab 1 的构建产物和截图已从 Lab 2 交付目录清理。
 
 ## 目录
@@ -18,6 +18,8 @@ report/实验报告模板.md         课程原始报告模板，保持原样
 report/prompt.md              最终提示词汇总
 report/members/               各成员独立维护的报告与提示词草稿
 report/images/                Lab 2 真实测试截图，文件名使用学号前缀
+report/logs/                  实际初始化与 MMU/TLB 调试输出
+report/changes/               按成员记录修改文件范围
 ```
 
 ## 三人分工与文件边界
@@ -39,20 +41,37 @@ report/images/                Lab 2 真实测试截图，文件名使用学号�
 
 ## 开发与验证
 
-在已安装课程要求工具的 Linux 或 WSL 环境中：
+当前可独立验证初始化。在已安装 RISC-V 工具链、QEMU、GDB、Python 3 及宿主机 C 编译器和头文件的 Linux/WSL 环境中：
 
 ```bash
 cd code
-make
-make qemu
-make grade
+make PMM=first_fit
+make qemu PMM=first_fit
+# 退出交互 QEMU 后运行自动验证：
+bash tools/verify_init.sh
 ```
 
-这些是实现完成后的验证命令，当前模板仍缺少待完成函数。`make grade` 在临时副本中注入 `tools/test_lab2.c` 的课程测试，检查页面初始化和 Best-Fit；Buddy、SLUB 另需自行设计并运行测试。
+`PMM=first_fit` 显式排除尚未完成的 Best-Fit 模板，使用课程现有 First-Fit 检查初始化。默认 `PMM=best_fit` 为最终课程配置，等待李子谦完成实现后再运行 `make`、`make qemu` 和 `make grade`。构建配置切换时自动重新编译对象文件。
 
-GDB 交互调试：两个终端分别执行 `make debug` 和 `make gdb`；观察 QEMU 内部地址翻译还需准备带调试信息的 QEMU，并用宿主机 GDB 附加其进程。具体版本、命令和实际结果由崔迪核实后写入报告。
+在 macOS 上可直接运行初始化的宿主机边界测试：
 
-本机原有 Docker 辅助入口仍保留；其中验证脚本针对 Lab 1，适配 Lab 2 前不能把其结果作为本实验通过依据。
+```bash
+python3 code/tools/check_page_init.py
+```
+
+本机原有容器已补充 `python3`、`libc6-dev`、`bc`，可运行：
+
+```bash
+docker start os-labs-lab-1
+docker exec os-labs-lab-1 bash tools/verify_init.sh
+docker exec os-labs-lab-1 python3 tools/debug_mmu.py --qemu-source /tmp/qemu
+```
+
+`debug_mmu.py` 需要 QEMU 4.1.1 源码及未剥离符号的构建文件；本次已准备在容器 `/tmp/qemu`。新环境的准备方法见 [崔迪个人记录](report/members/2412439-崔迪.md#qemu-源码准备与复现)。原有本机 Docker 验证脚本针对 Lab 1，本轮使用上述 Lab 2 新工具。
+
+实测日志见 [初始化验证](report/logs/2412439-initialization.txt)、[MMU/TLB 调试](report/logs/2412439-mmu.txt)。文件变更边界见 [2412439 改动记录](report/changes/2412439-initialization.md)。
+
+课程 `make grade` 在临时副本中注入官方测试；本轮未修改这些测试，也未宣称 Best-Fit 课程评分通过。Buddy、SLUB 仍需对应成员实现和自编测试。
 
 ## 协作与提交
 
