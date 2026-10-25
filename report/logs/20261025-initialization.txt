@@ -1,0 +1,202 @@
+=== Environment ===
+aarch64
+riscv64-unknown-elf-gcc () 10.2.0
+QEMU emulator version 4.1.1
+GNU gdb (Ubuntu 12.1-0ubuntu1~22.04.2) 12.1
+=== page_init host boundary checks ===
+PASS: 128 MiB RAM (31935 free pages)
+PASS: 16 MiB RAM (3543 free pages)
+PASS: partial final page (3543 free pages)
+PASS: 256 MiB capped at framework limit (31935 free pages)
+PASS: 4 MiB RAM (501 free pages)
+PASS: descriptors fit but no complete free page (0 free pages)
+PASS: zero RAM base (rejected before free-page registration)
+PASS: zero RAM size (rejected before free-page registration)
+PASS: RAM range overflow (rejected before free-page registration)
+PASS: RAM misses kernel start (rejected before free-page registration)
+PASS: RAM ends before kernel end (rejected before free-page registration)
+PASS: descriptor array does not fit (rejected before free-page registration)
+12 page_init boundary cases passed.
+=== Build: First-Fit in temporary copy ===
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/panic.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/buddy_check.c
++ cc kern/mm/buddy_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc kern/mm/slub.c
++ cc kern/mm/slub_check.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+  Class:                             ELF64
+  Machine:                           RISC-V
+  Entry point address:               0xffffffffc0200000
+=== QEMU: 64 MiB RAM, First-Fit ===
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000004000000 (64 MB)
+  End:  0x0000000083ffffff
+DTB init completed
+(THU.CST) os is loading ...
+Special kernel symbols:
+  entry  0xffffffffc02000d8 (virtual)
+  etext  0xffffffffc02017ea (virtual)
+  edata  0xffffffffc0206018 (virtual)
+  end    0xffffffffc0206078 (virtual)
+Kernel executable memory footprint: 24KB
+memory management: default_pmm_manager
+physical memory map:
+  memory: 0x0000000004000000, [0x0000000080000000, 0x0000000083ffffff].
+  managed end: 0x0000000084000000, free begin: 0x00000000802a7000
+check_alloc_page() succeeded!
+satp virtual address: 0xffffffffc0205000
+satp physical address: 0x0000000080205000
+qemu-system-riscv64: terminating on signal 15 from pid 1862 (timeout)
+PASS: 64 MiB boot, initialization and existing First-Fit checks
+=== QEMU: 128 MiB RAM, First-Fit ===
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+Special kernel symbols:
+  entry  0xffffffffc02000d8 (virtual)
+  etext  0xffffffffc02017ea (virtual)
+  edata  0xffffffffc0206018 (virtual)
+  end    0xffffffffc0206078 (virtual)
+Kernel executable memory footprint: 24KB
+memory management: default_pmm_manager
+physical memory map:
+  memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
+  managed end: 0x0000000088000000, free begin: 0x0000000080347000
+check_alloc_page() succeeded!
+satp virtual address: 0xffffffffc0205000
+satp physical address: 0x0000000080205000
+qemu-system-riscv64: terminating on signal 15 from pid 1872 (timeout)
+PASS: 128 MiB boot, initialization and existing First-Fit checks
+=== QEMU: 256 MiB RAM, First-Fit ===
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000010000000 (256 MB)
+  End:  0x000000008fffffff
+DTB init completed
+(THU.CST) os is loading ...
+Special kernel symbols:
+  entry  0xffffffffc02000d8 (virtual)
+  etext  0xffffffffc02017ea (virtual)
+  edata  0xffffffffc0206018 (virtual)
+  end    0xffffffffc0206078 (virtual)
+Kernel executable memory footprint: 24KB
+memory management: default_pmm_manager
+physical memory map:
+  memory: 0x0000000010000000, [0x0000000080000000, 0x000000008fffffff].
+  managed end: 0x0000000088000000, free begin: 0x0000000080347000
+check_alloc_page() succeeded!
+satp virtual address: 0xffffffffc0205000
+satp physical address: 0x0000000080205000
+qemu-system-riscv64: terminating on signal 15 from pid 1882 (timeout)
+PASS: 256 MiB boot, initialization and existing First-Fit checks
+=== GDB: page state, SATP and Sv39 mapping ===
+The target architecture is set to "riscv:rv64".
+0x0000000000001000 in ?? ()
+Temporary breakpoint 1 at 0xffffffffc02006a2: file libs/list.h, line 123.
+
+Temporary breakpoint 1, default_check () at libs/list.h:123
+123	    return listelm->next;
+pc             0xffffffffc02006a2	0xffffffffc02006a2 <default_check>
+satp           0x8000000000080205	-9223372036854251003
+=> 0xffffffffc02006a2 <default_check>:	addi	sp,sp,-80
+   0xffffffffc02006a4 <default_check+2>:	sd	s0,64(sp)
+   0xffffffffc02006a6 <default_check+4>:	auipc	s0,0x6
+   0xffffffffc02006aa <default_check+8>:	addi	s0,s0,-1678
+   0xffffffffc02006ae <default_check+12>:	ld	a5,8(s0)
+   0xffffffffc02006b0 <default_check+14>:	sd	ra,72(sp)
+PASS: initialized descriptors, reserved pages and 31929 free pages
+Sv39 root VA=0xffffffffc0205000 PA=0x80205000 satp=0x8000000000080205
+Sv39 VPN[2]=511 PTE=0x200000cf (1 GiB leaf)
+PASS: kern_init VA=0xffffffffc02000d8 -> PA=0x802000d8
+[Inferior 1 (process 1) detached]
+PASS: independent initialization verification completed.
+NOTE: First-Fit verification; course Best-Fit grading and Buddy/SLUB are separate.

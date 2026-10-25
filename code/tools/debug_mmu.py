@@ -11,6 +11,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+from lab2_verify import prepare_tree
+
 
 HOST_GDB = r'''
 set pagination off
@@ -167,21 +169,23 @@ def main():
     parser.add_argument("--gdb", default="gdb-multiarch")
     parser.add_argument("--port", type=int, default=1237)
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[1]
+    source_root = Path(__file__).resolve().parents[1]
     source = args.qemu_source.resolve()
     qemu = source / "riscv64-softmmu/qemu-system-riscv64"
     if not qemu.is_file():
         parser.error(f"unstripped QEMU build not found: {qemu}")
     walk = line_containing(source / "target/riscv/cpu_helper.c",
                            "target_ulong ppn = pte >> PTE_PPN_SHIFT;")
-    load = line_containing(root / "kern/driver/dtb.c",
-                           "uint32_t magic = fdt32_to_cpu(header->magic);")
-    run(["make", "PMM=first_fit", "-j2"], root)
     qemu_args = [str(qemu), "-machine", "virt", "-m", "128M", "-nographic",
                  "-bios", "default", "-device",
                  "loader,file=bin/ucore.img,addr=0x80200000"]
     with tempfile.TemporaryDirectory(prefix="lab2-mmu-") as directory:
         directory = Path(directory)
+        root = directory / "code"
+        prepare_tree(source_root, root, "first_fit", slub_check=False)
+        load = line_containing(root / "kern/driver/dtb.c",
+                               "uint32_t magic = fdt32_to_cpu(header->magic);")
+        run(["make", "-j2"], root)
         host_script = directory / "host.gdb"
         host_script.write_text(HOST_GDB.replace("__WALK_LOCATION__", walk))
         print("=== Host GDB: QEMU 4.1.1 native MMU/TLB implementation ===", flush=True)

@@ -5,19 +5,6 @@ SLASH	:= /
 
 V       := @
 
-# The final course configuration uses Best-Fit. First-Fit allows the
-# initialization owner to validate page_init before Best-Fit is implemented.
-PMM ?= best_fit
-ifeq ($(PMM),first_fit)
-PMM_CFLAGS := -DPMM_FIRST_FIT
-else ifeq ($(PMM),best_fit)
-PMM_CFLAGS := -DPMM_BEST_FIT
-else ifeq ($(PMM),buddy)
-PMM_CFLAGS := -DPMM_BUDDY
-else
-$(error PMM must be first_fit, best_fit or buddy)
-endif
-
 #ifndef GCCPREFIX
 GCCPREFIX := riscv64-unknown-elf-
 #endif
@@ -43,11 +30,10 @@ HOSTCFLAGS	:= -Wall -O2
 GDB		:= $(GCCPREFIX)gdb
 
 CC		:= $(GCCPREFIX)gcc
-CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror
+CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror 
 CFLAGS	+= -fno-builtin -Wall -O2 -nostdinc $(DEFS)
 CFLAGS	+= -fno-stack-protector -ffunction-sections -fdata-sections
 CFLAGS	+= -g
-CFLAGS  += $(PMM_CFLAGS)
 CFLAGS2 = $(CFLAGS) -D ucore_test
 CTYPE	:= c S
 LD      := $(GCCPREFIX)ld
@@ -123,27 +109,12 @@ KSRCDIR		+= kern/init \
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
 
-KERNEL_SOURCES := $(call listf_cc,$(KSRCDIR))
-ifeq ($(PMM),first_fit)
-KERNEL_SOURCES := $(filter-out kern/mm/best_fit_pmm.c,$(KERNEL_SOURCES))
-endif
-
 ifeq ($(MAKECMDGOALS),test)
-$(call add_files_cc2,$(KERNEL_SOURCES),kernel,$(KCFLAGS))
+$(call add_files_cc2,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 else
-$(call add_files_cc,$(KERNEL_SOURCES),kernel,$(KCFLAGS))
+$(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 endif
 KOBJS	= $(call read_packet,kernel libs)
-
-# Rebuild when changing allocators, including a switch back to an earlier mode.
-# Keeping one content-checked stamp avoids reusing an object with stale macros.
-PMM_CONFIG := $(OBJDIR)/.pmm-config
-.PHONY: FORCE_PMM_CONFIG
-$(PMM_CONFIG): FORCE_PMM_CONFIG
-	@$(MKDIR) $(OBJDIR)
-	@printf '%s\n' '$(PMM)' | cmp -s - $@ || printf '%s\n' '$(PMM)' > $@
-
-$(ALLOBJS): $(PMM_CONFIG)
 
 # create kernel target
 kernel = $(call totarget,kernel)

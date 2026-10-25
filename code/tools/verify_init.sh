@@ -15,6 +15,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Alternate-manager selection is confined to a disposable copy. The source
+# Makefile and the normal kernel startup remain exactly as the course supplied.
+python3 - "$PWD" "$check_dir/code" <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(sys.argv[1]) / "tools"))
+from lab2_verify import prepare_tree
+prepare_tree(sys.argv[1], sys.argv[2], "first_fit", slub_check=False)
+PY
+cd "$check_dir/code"
+
 printf '%s\n' '=== Environment ==='
 uname -m
 riscv64-unknown-elf-gcc --version | head -1
@@ -22,17 +33,8 @@ riscv64-unknown-elf-gcc --version | head -1
 "$gdb_bin" --version | head -1
 printf '%s\n' '=== page_init host boundary checks ==='
 python3 tools/check_page_init.py
-printf '%s\n' '=== Build: PMM=first_fit ==='
-make PMM=first_fit -j2
-printf '%s\n' '=== Backend selection and object rebuild (no Best-Fit implementation test) ==='
-make PMM=best_fit obj/kern/mm/pmm.o
-riscv64-unknown-elf-objdump -r obj/kern/mm/pmm.o > "$check_dir/pmm.reloc"
-grep -q best_fit_pmm_manager "$check_dir/pmm.reloc"
-make PMM=first_fit -j2
-riscv64-unknown-elf-objdump -r obj/kern/mm/pmm.o > "$check_dir/pmm.reloc"
-grep -q default_pmm_manager "$check_dir/pmm.reloc"
-if grep -q best_fit_pmm_manager "$check_dir/pmm.reloc"; then exit 1; fi
-printf '%s\n' 'PASS: backend switches rebuild pmm.o with the intended manager reference.'
+printf '%s\n' '=== Build: First-Fit in temporary copy ==='
+make -j2
 riscv64-unknown-elf-readelf -h bin/kernel | sed -n '/Class:/p;/Machine:/p;/Entry point/p'
 
 for ram in 64 128 256; do

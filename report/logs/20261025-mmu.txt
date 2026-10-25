@@ -1,0 +1,151 @@
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/panic.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/buddy_check.c
++ cc kern/mm/buddy_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc kern/mm/slub.c
++ cc kern/mm/slub_check.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+=== Host GDB: QEMU 4.1.1 native MMU/TLB implementation ===
+Breakpoint 1 at 0x342f54: file /tmp/qemu/target/riscv/cpu_helper.c, line 158.
+warning: Error disabling address space randomization: Operation not permitted
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/aarch64-linux-gnu/libthread_db.so.1".
+[New Thread 0xffff9226ece0 (LWP 2471)]
+[New Thread 0xffff91a5ece0 (LWP 2472)]
+[New Thread 0xffff911cdce0 (LWP 2473)]
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+[Switching to Thread 0xffff911cdce0 (LWP 2473)]
+
+Thread 4 "qemu-system-ris" hit Breakpoint 1, get_physical_address (env=env@entry=0xaaaae77e1280, physical=physical@entry=0xffff911cd000, prot=prot@entry=0xffff911ccffc, addr=addr@entry=2149580800, access_type=access_type@entry=2, mmu_idx=mmu_idx@entry=1) at /tmp/qemu/target/riscv/cpu_helper.c:158
+158	{
+
+=== Bare-mode instruction fetch ===
+$1 = 0x80200000
+$2 = 0x0
+$3 = 1
+0x0000aaaad1b33874 in riscv_cpu_tlb_fill (cs=0xaaaae77d8800, address=2149580800, size=0, access_type=MMU_INST_FETCH, mmu_idx=1, probe=false, retaddr=0) at /tmp/qemu/target/riscv/cpu_helper.c:451
+451	    ret = get_physical_address(env, &pa, &prot, address, access_type, mmu_idx);
+Value returned is $4 = 0
+$5 = 0x80200000
+PASS: bare-mode VA=PA=0x80200000
+Breakpoint 2 at 0xaaaad1ab71c0: file /tmp/qemu/accel/tcg/cputlb.c, line 700.
+
+Thread 4 "qemu-system-ris" hit Breakpoint 2, tlb_set_page_with_attrs (cpu=cpu@entry=0xaaaae77d8800, vaddr=vaddr@entry=2149580800, paddr=2149580800, attrs=attrs@entry=..., prot=7, mmu_idx=mmu_idx@entry=1, size=size@entry=4096) at /tmp/qemu/accel/tcg/cputlb.c:700
+700	{
+$6 = 0x80200000
+$7 = 0x80200000
+$8 = 1
+$9 = 0x1000
+PASS: QEMU fills its software TLB even in bare mode
+Breakpoint 3 at 0xaaaad1b32f54: file /tmp/qemu/target/riscv/cpu_helper.c, line 158.
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+
+Thread 4 "qemu-system-ris" hit Breakpoint 3, get_physical_address (env=env@entry=0xaaaae77e1280, physical=physical@entry=0xffff911ccb50, prot=prot@entry=0xffff911ccb4c, addr=addr@entry=18446744072671461376, access_type=access_type@entry=0, mmu_idx=mmu_idx@entry=1) at /tmp/qemu/target/riscv/cpu_helper.c:158
+158	{
+
+=== Real guest load, Sv39 translation ===
+#0  get_physical_address (env=env@entry=0xaaaae77e1280, physical=physical@entry=0xffff911ccb50, prot=prot@entry=0xffff911ccb4c, addr=addr@entry=18446744072671461376, access_type=access_type@entry=0, mmu_idx=mmu_idx@entry=1) at /tmp/qemu/target/riscv/cpu_helper.c:158
+#1  0x0000aaaad1b33874 in riscv_cpu_tlb_fill (cs=0xaaaae77d8800, address=18446744072671461376, size=4, access_type=MMU_DATA_LOAD, mmu_idx=1, probe=false, retaddr=281472997363532) at /tmp/qemu/target/riscv/cpu_helper.c:451
+#2  0x0000aaaad1ab4480 in tlb_fill (cpu=cpu@entry=0xaaaae77d8800, addr=addr@entry=18446744072671461376, size=size@entry=4, access_type=access_type@entry=MMU_DATA_LOAD, mmu_idx=mmu_idx@entry=1, retaddr=retaddr@entry=281472997363532) at /tmp/qemu/accel/tcg/cputlb.c:878
+#3  0x0000aaaad1ab5960 in load_helper (full_load=<optimized out>, code_read=false, big_endian=false, size=4, retaddr=281472997363532, oi=97, addr=18446744072671461376, env=0xaaaae77e1280) at /tmp/qemu/include/exec/cpu-all.h:404
+#4  full_le_ldul_mmu (env=0xaaaae77e1280, addr=18446744072671461376, oi=97, retaddr=281472997363532) at /tmp/qemu/accel/tcg/cputlb.c:1423
+#5  0x0000ffff8a059018 in code_gen_buffer ()
+env = 0xaaaae77e1280
+physical = 0xffff911ccb50
+prot = 0xffff911ccb4c
+addr = 18446744072671461376
+access_type = 0
+mmu_idx = 1
+$10 = 0x8000000000080205
+#1  0x0000aaaad1b33874 in riscv_cpu_tlb_fill (cs=0xaaaae77d8800, address=18446744072671461376, size=4, access_type=MMU_DATA_LOAD, mmu_idx=1, probe=false, retaddr=281472997363532) at /tmp/qemu/target/riscv/cpu_helper.c:451
+451	    ret = get_physical_address(env, &pa, &prot, address, access_type, mmu_idx);
+#0  get_physical_address (env=env@entry=0xaaaae77e1280, physical=physical@entry=0xffff911ccb50, prot=prot@entry=0xffff911ccb4c, addr=addr@entry=18446744072671461376, access_type=access_type@entry=0, mmu_idx=mmu_idx@entry=1) at /tmp/qemu/target/riscv/cpu_helper.c:158
+158	{
+$11 = 0xffffffffc0200000
+PASS: software TLB read tag misses the requested page
+Temporary breakpoint 4 at 0xaaaad1b331a8: file /tmp/qemu/target/riscv/cpu_helper.c, line 254.
+
+Thread 4 "qemu-system-ris" hit Temporary breakpoint 4, get_physical_address (env=env@entry=0xaaaae77e1280, physical=physical@entry=0xffff911ccb50, prot=prot@entry=0xffff911ccb4c, addr=addr@entry=18446744072671461376, access_type=access_type@entry=0, mmu_idx=mmu_idx@entry=1) at /tmp/qemu/target/riscv/cpu_helper.c:254
+254	        target_ulong ppn = pte >> PTE_PPN_SHIFT;
+
+=== Single-step page-table leaf handling ===
+$12 = 3
+$13 = 0
+$14 = 18
+$15 = 0x80205ff8
+$16 = 0x200000cf
+PASS: Sv39 root is already a 1 GiB leaf; lower levels are not walked
+256	        if (!(pte & PTE_V)) {
+259	        } else if (!(pte & (PTE_R | PTE_W | PTE_X))) {
+0x0000aaaad1b33874 in riscv_cpu_tlb_fill (cs=0xaaaae77d8800, address=18446744072671461376, size=4, access_type=MMU_DATA_LOAD, mmu_idx=1, probe=false, retaddr=281472997363532) at /tmp/qemu/target/riscv/cpu_helper.c:451
+451	    ret = get_physical_address(env, &pa, &prot, address, access_type, mmu_idx);
+Value returned is $17 = 0
+$18 = 0x82200000
+$19 = 0x7
+PASS: actual QEMU translation VA=0xffffffffc2200000 -> PA=0x82200000
+Breakpoint 5 at 0xaaaad1ab71c0: file /tmp/qemu/accel/tcg/cputlb.c, line 700.
+
+Thread 4 "qemu-system-ris" hit Breakpoint 5, tlb_set_page_with_attrs (cpu=cpu@entry=0xaaaae77d8800, vaddr=vaddr@entry=18446744072671461376, paddr=2183135232, attrs=attrs@entry=..., prot=7, mmu_idx=mmu_idx@entry=1, size=size@entry=4096) at /tmp/qemu/accel/tcg/cputlb.c:700
+700	{
+
+=== Software TLB refill ===
+cpu = 0xaaaae77d8800
+vaddr = 18446744072671461376
+paddr = 2183135232
+attrs = {unspecified = 1, secure = 0, user = 0, requester_id = 0, target_tlb_bit0 = 0, target_tlb_bit1 = 0, target_tlb_bit2 = 0}
+prot = 7
+mmu_idx = 1
+size = 4096
+riscv_cpu_tlb_fill (cs=0xaaaae77d8800, address=18446744072671461376, size=4, access_type=MMU_DATA_LOAD, mmu_idx=1, probe=<optimized out>, retaddr=281472997363532) at /tmp/qemu/target/riscv/cpu_helper.c:474
+474	        return true;
+$20 = 0xffffffffc2200000
+$21 = 0xffffffffc2200000
+$22 = 0xffffb7e00000
+PASS: refilled TLB points to host RAM containing DTB magic d00dfeed
+=== Guest GDB: corresponding RISC-V DTB load instruction ===
+The target architecture is set to "riscv:rv64".
+0x0000000000001000 in ?? ()
+Temporary breakpoint 1 at 0xffffffffc020028a: file kern/driver/dtb.c, line 122.
+
+Temporary breakpoint 1, dtb_init () at kern/driver/dtb.c:122
+122	    uint32_t magic = fdt32_to_cpu(header->magic);
+Guest DTB load: PC=0xffffffffc020028a instruction=lw	a5,0(a4) VA=0xffffffffc2200000
+fdt32_to_cpu (x=3992849872) at kern/driver/dtb.c:30
+30	    return ((x & 0xff) << 24) | (((x >> 8) & 0xff) << 16) | 
+PASS: guest lw/lwu read DTB bytes d00dfeed (little-endian value 0xedfe0dd0)
+[Inferior 1 (process 1) detached]
+PASS: QEMU source MMU/TLB and guest instruction traces completed.
