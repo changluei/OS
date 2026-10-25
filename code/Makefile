@@ -12,8 +12,10 @@ ifeq ($(PMM),first_fit)
 PMM_CFLAGS := -DPMM_FIRST_FIT
 else ifeq ($(PMM),best_fit)
 PMM_CFLAGS := -DPMM_BEST_FIT
+else ifeq ($(PMM),buddy)
+PMM_CFLAGS := -DPMM_BUDDY
 else
-$(error PMM must be first_fit or best_fit)
+$(error PMM must be first_fit, best_fit or buddy)
 endif
 
 #ifndef GCCPREFIX

@@ -1,5 +1,6 @@
 #include <default_pmm.h>
 #include <best_fit_pmm.h>
+#include <buddy_pmm.h>
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -36,6 +37,8 @@ static void check_alloc_page(void);
 static void init_pmm_manager(void) {
 #ifdef PMM_FIRST_FIT
     pmm_manager = &default_pmm_manager;
+#elif defined(PMM_BUDDY)
+    pmm_manager = &buddy_pmm_manager;
 #else
     pmm_manager = &best_fit_pmm_manager;
 #endif
