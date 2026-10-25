@@ -177,7 +177,7 @@ static void init_pmm_manager(void);
 
 宿主机测试编译真实 `page_init()` 函数体，仅模拟 DTB、控制台及空闲区注册接口，并替换链接器 `end` 声明。12 个用例全部通过，覆盖正常范围、未对齐末端、管理上限、无完整空闲页、零范围、加法溢出、未覆盖内核及描述符空间不足。
 
-真实内核另在 64、128、256 MiB RAM 下完成启动与 First-Fit 自检。GDB 确认保留页和空闲数正确；128 MiB 的独立初始化配置中初始空闲页为 31929 页。该数值依赖内核及元数据布局，不与其他构建配置的空闲页数混用。
+真实内核另在 64、128、256 MiB RAM 下完成启动与 First-Fit 自检。GDB 确认保留页和空闲数正确；128 MiB 的独立初始化配置中初始空闲页为 31929 页。该数值依赖内核及元数据布局，不与其他构建配置的空闲页数混用。完整记录见 [初始化与页表状态日志](logs/20261025-initialization.txt)。
 
 ### 4.2 练习：First-Fit 连续物理内存分配算法分析
 
@@ -344,7 +344,7 @@ Post-Condition：空闲计数准确，接口注册完整，兼容原测试状态
 
 ##### 编译与运行验证
 
-由主 agent 在隔离副本中统一编译，运行课程评分和不同 RAM 下的 Best-Fit、SLUB 组合检查；本轮命令和输出记录在 [李子谦测试记录](logs/2412819-tests.txt) 的“重新生成后的实际验证”部分，结果见第五章。
+由主 agent 在隔离副本中统一编译，运行课程评分和不同 RAM 下的 Best-Fit、SLUB 组合检查；当前版本的命令和输出见 [测试记录](logs/2412819-tests.txt)，结果见第五章。
 
 **最终结果：** 本轮重新生成后编译通过，四种 RAM 的 Best-Fit 与 SLUB 组合检查通过，课程 page init、best fit 均 OK，总分 **20/20**。未修改原课程测试，未发生需要再次修改 Best-Fit 实现的运行失败。
 
@@ -505,7 +505,7 @@ Post-Condition：静态记录能容纳 (PHYSICAL_MEMORY_END-DRAM_BASE)/PGSIZE �
 
 **问题解决策略：** 实际发送上面的测试修正提示词，改用 (PHYSICAL_MEMORY_END-DRAM_BASE)/PGSIZE 计算上限。保留完整描述符和保留状态检查，没有截断数组范围或放宽断言；32 KiB 主记录数组使用静态存储，不占内核栈。每轮输出轮次与初始空闲页数。
 
-**验证方式：** 修正后由主 agent 统一编译，运行四种 RAM 下的两轮 Buddy 自检及 SLUB 组合检查，结果见第五章和 [李子谦测试记录](logs/2412819-tests.txt) 的本轮记录。
+**验证方式：** 修正后由主 agent 统一编译，运行四种 RAM 下的两轮 Buddy 自检及 SLUB 组合检查，结果见第五章和 [测试记录](logs/2412819-tests.txt)。
 
 **最终结果：** 64、70、128、256 MiB 配置均完成两轮 Buddy 自检及 SLUB 检查，空闲计数恢复，验证命令正常返回；本轮发现的问题是上述静态容量上限错误，修正后未发生运行时断言失败。
 
@@ -856,7 +856,7 @@ QEMU 4.1.1 的 `accel/tcg/cputlb.c:load_helper()` 通过 `tlb_index()`、`tlb_en
 
 在 SATP=0 的裸地址模式下跟踪 `0x80200000` 取指，结果仍为同一物理地址，QEMU 也调用 `tlb_set_page_with_attrs()` 填充软件 TLB。软件 TLB 同时维护 guest 地址、host RAM 地址和访问属性，裸地址模式下仍有用途。
 
-因此，页表叶子的 1 GiB 映射范围与 QEMU 软件 TLB 的 4 KiB 填充粒度含义不同，不能直接据此推断真实 CPU 的微架构 TLB 行为。host 指针还会随进程地址布局变化，不应作为固定物理地址写入结论。
+因此，页表叶子的 1 GiB 映射范围与 QEMU 软件 TLB 的 4 KiB 填充粒度含义不同，不能直接据此推断真实 CPU 的微架构 TLB 行为。host 指针还会随进程地址布局变化，不应作为固定物理地址写入结论。完整输出见 [MMU/TLB 调试日志](logs/20261025-mmu.txt)。
 
 ### 4.7 Challenge：未知硬件的可用物理内存范围获取
 
@@ -918,26 +918,15 @@ page_init() 消费解析后的单段 RAM 信息，并受 PHYSICAL_MEMORY_END 及
 
 ### 5.1 验证范围与结果
 
-以下为组长于 **2026-10-25** 完成的集成验证，使用 ARM64 Linux 容器、RISC-V GCC 10.2.0、QEMU 4.1.1 和 GDB 12.1，对应组长整理时的代码版本。李子谦本轮重新生成后的验证另在本节列出，原截图和日志保留，不冒充本轮新输出。
+2026-10-25，使用 RISC-V GCC 10.2.0、QEMU 4.1.1 对当前版本重新测试，结果如下。
 
-| 检查项目 | 结果 | 证据 |
-|----------|------|------|
-| 默认内核构建、启动、Best-Fit 和 SLUB 自检 | 通过 | [默认启动日志](logs/20261025-default-boot.txt) |
-| 课程 `make grade` | page init、best fit 均 OK，20/20 | [评分日志](logs/20261025-release-grade.txt) |
-| First-Fit / Best-Fit / Buddy × 64/70/128/256 MiB | 12 组页级与 SLUB 检查通过 | [组合验证日志](logs/20261025-final-verification.txt) |
-| `page_init()` 宿主机边界用例 | 12/12 | [初始化日志](logs/20261025-initialization.txt) |
-| GDB 保留页、空闲数、SATP 和 Sv39 | 通过 | [初始化日志](logs/20261025-initialization.txt) |
-| QEMU 源码 TLB 未命中、页表遍历、填充及裸地址对比 | 通过 | [MMU/TLB 日志](logs/20261025-mmu.txt) |
+| 检查项目 | 结果 |
+|----------|------|
+| First-Fit、Best-Fit、Buddy × 64/70/128/256 MiB，与 SLUB 组合运行 | 12 组全部通过；Buddy 每组完成两轮自检 |
+| `page_init()` 边界用例 | 12/12 通过 |
+| 原课程 `make grade` | page init、best fit 均 OK，**20/20** |
 
-**李子谦本轮重新生成后的验证：** 2026-10-25 在 WSL2 / Ubuntu 24.04.4 LTS / x86_64 中，使用 RISC-V GCC 10.2.0 和 QEMU 4.1.1，在隔离副本中执行以下检查。未复用组长旧日志充当本轮结果，也未重新执行 QEMU 源码/MMU 调试。
-
-| 本轮检查 | 结果 | 证据 |
-|----------|------|------|
-| First-Fit / Best-Fit / Buddy × 64/70/128/256 MiB，与 SLUB 组合运行 | 12 组全部通过；每种 Buddy 配置完成两轮独立自检 | [李子谦本轮测试记录](logs/2412819-tests.txt) 末尾 |
-| 初始化边界用例回归 | 12/12 | 同上 |
-| 原课程评分 | page init、best fit 均 OK，20/20 | 同上 |
-
-课程评分覆盖初始化和 Best-Fit；Buddy、SLUB 由独立检查补充覆盖。测试结果适用于所列场景，不包含并发、任意非法指针或所有可能的分配序列。
+完整输出见 [测试日志](logs/2412819-tests.txt)。MMU/TLB 调试见 4.6 节，本轮未重测。
 
 ### 5.2 构建与复现命令
 

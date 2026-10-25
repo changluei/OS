@@ -14,7 +14,7 @@
 code/                         课程源码、实验功能与独立验证工具
 report/report.md              正式实验报告，含分工、实现分析与测试
 report/prompt.md              按 Lab 0.5 四段式编写的任务提示词
-report/logs/                  真实运行与调试日志，文件名包含日期
+report/logs/                  当前测试、初始化与 MMU 调试日志
 report/images/                五张真实终端截图及核对索引
 ```
 
@@ -59,9 +59,7 @@ python3 tools/debug_mmu.py --qemu-source /tmp/qemu
 
 ## 交付证据
 
-- [默认构建和启动](report/logs/20261025-default-boot.txt)
-- [课程评分 20/20](report/logs/20261025-release-grade.txt)
-- [12 组组合检查](report/logs/20261025-final-verification.txt)
+- [当前版本构建、12 组组合检查与课程评分 20/20](report/logs/2412819-tests.txt)
 - [初始化与页表状态](report/logs/20261025-initialization.txt)
 - [QEMU 源码与 RISC-V 指令调试](report/logs/20261025-mmu.txt)
 - [真实截图与核对结果](report/images/README.md)
