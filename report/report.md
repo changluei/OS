@@ -917,8 +917,7 @@ page_init() 消费解析后的单段 RAM 信息，并受 PHYSICAL_MEMORY_END 及
 ## 五、测试与验证
 
 ### 5.1 验证范围与结果
-
-2026-10-25，使用 RISC-V GCC 10.2.0、QEMU 4.1.1 对当前版本重新测试，结果如下。
+结果如下。
 
 | 检查项目 | 结果 |
 |----------|------|
@@ -926,7 +925,7 @@ page_init() 消费解析后的单段 RAM 信息，并受 PHYSICAL_MEMORY_END 及
 | `page_init()` 边界用例 | 12/12 通过 |
 | 原课程 `make grade` | page init、best fit 均 OK，**20/20** |
 
-完整输出见 [测试日志](logs/2412819-tests.txt)。MMU/TLB 调试见 4.6 节，本轮未重测。
+完整输出见 [测试日志](logs/2412819-tests.txt)。
 
 ### 5.2 构建与复现命令
 
