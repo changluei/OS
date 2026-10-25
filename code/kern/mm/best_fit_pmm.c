@@ -2,81 +2,78 @@
 #include <list.h>
 #include <best_fit_pmm.h>
 #include <stdio.h>
-#include <slub.h>  // 为学生新增的组合自检提供 SLUB 检查入口。
+#include <slub.h>  // 保留组长的 SLUB 组合自检接入。
 
-//lab2 function2-2 2412819
-
-// 本管理器独立维护空闲块链表和空闲页总数，避免与其他分配器共享内部状态。
+// lab2 function2-2 2412819
 static free_area_t free_area;
 
 #define free_list (free_area.free_list)
 #define nr_free (free_area.nr_free)
 
+/* Keep block heads in address order. No state outside free_area is needed
+ * by tests that save and restore the free list and page count. */
 static void
-best_fit_init(void) {
-    // 此时只初始化管理结构，实际可用页面随后由 init_memmap 登记。
-    list_init(&free_list);
-    nr_free = 0;
-}
-
-/* 按地址顺序登记空闲块，并尝试与前后相邻块合并。
- * 空闲页数只增加本次新归还的 n 页，合并已有块时不重复计数。 */
-static void
-best_fit_insert_block(struct Page *base, size_t n) {
-    // 找到第一个起点大于 base 的块，插入它之前，保持地址有序。
+best_fit_insert_block(struct Page *base) {
     list_entry_t *le = list_next(&free_list);
     while (le != &free_list && le2page(le, page_link) < base) {
         le = list_next(le);
     }
-    // 只有空闲块的头页设置 PG_property，property 记录该块连续页面的数量。
-    base->property = n;
-    SetPageProperty(base);
     list_add_before(le, &base->page_link);
-    nr_free += n;
+}
 
-    // 前块末端等于当前起点，说明物理连续；合并后以前块作为新的块头。
-    le = list_prev(&base->page_link);
-    if (le != &free_list) {
+static void
+best_fit_merge_block(struct Page *base) {
+    best_fit_insert_block(base);
+    list_entry_t *le;
+    while ((le = list_prev(&base->page_link)) != &free_list) {
         struct Page *prev = le2page(le, page_link);
-        if (prev + prev->property == base) {
-            prev->property += base->property;
-            ClearPageProperty(base);
-            base->property = 0;
-            list_del(&base->page_link);
-            base = prev;
+        if (prev + prev->property != base) {
+            break;
         }
+        prev->property += base->property;
+        ClearPageProperty(base);
+        base->property = 0;
+        list_del_init(&base->page_link);
+        base = prev;
     }
 
-    // 再检查后块；被合并的旧块头须清除标志并摘链，避免重复登记。
-    le = list_next(&base->page_link);
-    if (le != &free_list) {
+    while ((le = list_next(&base->page_link)) != &free_list) {
         struct Page *next = le2page(le, page_link);
-        if (base + base->property == next) {
-            base->property += next->property;
-            ClearPageProperty(next);
-            next->property = 0;
-            list_del(&next->page_link);
+        if (base + base->property != next) {
+            break;
         }
+        base->property += next->property;
+        ClearPageProperty(next);
+        next->property = 0;
+        list_del_init(&next->page_link);
     }
+}
+
+static void
+best_fit_init(void) {
+    list_init(&free_list);
+    nr_free = 0;
 }
 
 static void
 best_fit_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
-    // 初始化阶段传入的页应仍处于保留状态；清理状态后交给统一登记函数。
-    for (struct Page *p = base; p != base + n; p ++) {
+    for (struct Page *p = base; p != base + n; p++) {
         assert(PageReserved(p));
         p->flags = 0;
         p->property = 0;
         set_page_ref(p, 0);
     }
-    best_fit_insert_block(base, n);
+    base->property = n;
+    SetPageProperty(base);
+    nr_free += n;
+    /* Register only this range; do not rewrite existing block metadata. */
+    best_fit_insert_block(base);
 }
 
 static struct Page *
 best_fit_alloc_pages(size_t n) {
     assert(n > 0);
-    // 总空闲页数不足时直接失败，避免继续扫描链表。
     if (n > nr_free) {
         return NULL;
     }
@@ -85,29 +82,25 @@ best_fit_alloc_pages(size_t n) {
     list_entry_t *le = &free_list;
     while ((le = list_next(le)) != &free_list) {
         struct Page *p = le2page(le, page_link);
-        /* Best-Fit 扫描所有能容纳 n 页的块，选择容量最小者。
-         * 同样大小时不替换候选，因此地址有序链表会保留起点较小的块。 */
         if (p->property >= n &&
-            (best == NULL || p->property < best->property)) {
+            (best == NULL || p->property < best->property ||
+             (p->property == best->property && p < best))) {
             best = p;
         }
     }
-    // 总空闲页足够也可能因外部碎片，找不到足够大的连续块。
     if (best == NULL) {
         return NULL;
     }
 
-    // 从所选块头取走 n 页，剩余部分作为新空闲块，保留在原链表位置。
-    size_t remaining = best->property - n;
+    size_t block_size = best->property;
     list_entry_t *prev = list_prev(&best->page_link);
-    list_del(&best->page_link);
-    if (remaining > 0) {
+    list_del_init(&best->page_link);
+    if (block_size > n) {
         struct Page *rest = best + n;
-        rest->property = remaining;
+        rest->property = block_size - n;
         SetPageProperty(rest);
-        list_add(prev, &rest->page_link);
+        list_add_after(prev, &rest->page_link);
     }
-    // 已分配的头页不再表示空闲块，计数只扣除实际取走的 n 页。
     ClearPageProperty(best);
     best->property = 0;
     nr_free -= n;
@@ -117,14 +110,16 @@ best_fit_alloc_pages(size_t n) {
 static void
 best_fit_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
-    // 归还的页面不能是保留页或已登记的空闲块头；清理其元数据后统一插入、合并。
-    for (struct Page *p = base; p != base + n; p ++) {
+    for (struct Page *p = base; p != base + n; p++) {
         assert(!PageReserved(p) && !PageProperty(p));
         p->flags = 0;
         p->property = 0;
         set_page_ref(p, 0);
     }
-    best_fit_insert_block(base, n);
+    base->property = n;
+    SetPageProperty(base);
+    nr_free += n;
+    best_fit_merge_block(base);
 }
 
 static size_t
@@ -272,7 +267,6 @@ best_fit_and_slub_check(void) {
     assert(slub_check() == SLUB_OK);
 }
 
-// 把学生实现注册到课程统一接口；框架仍通过这些函数指针调用管理器。
 const struct pmm_manager best_fit_pmm_manager = {
     .name = "best_fit_pmm_manager",
     .init = best_fit_init,

@@ -1,328 +1,348 @@
-// lab2 2412819: independent black-box Buddy System self-check.
+/* lab2, student ID: 2412819
+ * Black-box Buddy checks: only the public PMM contract is observed.
+ */
+#include <assert.h>
 #include <buddy_pmm.h>
 #include <pmm.h>
 #include <stdio.h>
 
-/* The framework caps managed RAM at PHYSICAL_MEMORY_END, even with -m 256M.
- * Keep one byte per possible descriptor in BSS, not on the 8 KiB kernel stack.
- * This is test ownership, never allocator metadata: 0 = available, 1 = held by
- * this test, 2 = reserved at entry. No property/order/list field is inspected.
+/* Keep the per-page records out of the 8 KiB kernel stack.  Descriptors cover
+ * all DRAM, including reserved pages below the kernel mapping window;
+ * unsupported layouts fail rather than truncate.
  */
-#define CHECK_MAX_PAGES ((PHYSICAL_MEMORY_END - DRAM_BASE) / PGSIZE)
-static unsigned char check_owner[CHECK_MAX_PAGES];
-static size_t check_descriptors;
+#define BUDDY_CHECK_MAX_PAGES ((PHYSICAL_MEMORY_END - DRAM_BASE) / PGSIZE)
+#define BUDDY_CHECK_RESERVED 1U
+#define BUDDY_CHECK_LIVE 2U
+
+static uint8_t buddy_check_state[BUDDY_CHECK_MAX_PAGES];
+static size_t buddy_check_page_count;
+static size_t buddy_check_initial_free;
+static uintptr_t buddy_check_seed;
 
 static size_t
-check_capacity(size_t request) {
-    assert(request > 0 && request <= CHECK_MAX_PAGES);
+buddy_check_capacity(size_t request) {
     size_t capacity = 1;
+    assert(request > 0 && request <= buddy_check_page_count);
     while (capacity < request) {
-        capacity <<= 1;
+        assert(capacity <= (size_t)-1 / 2);
+        capacity *= 2;
     }
     return capacity;
 }
 
-/* Validate an untrusted returned descriptor numerically before subtracting or
- * dereferencing it. Validate the ENTIRE rounded allocation, not just its head.
- */
 static size_t
-check_index(struct Page *page, size_t capacity) {
+buddy_check_index(struct Page *page, size_t capacity) {
     uintptr_t address = (uintptr_t)page;
     uintptr_t first = (uintptr_t)pages;
+    size_t index;
+
+    /* Validate the descriptor before subtraction or dereferencing it. */
     assert(address >= first);
     assert((address - first) % sizeof(struct Page) == 0);
-    size_t index = (address - first) / sizeof(struct Page);
-    assert(index < check_descriptors);
-    assert(capacity <= check_descriptors - index);
+    index = (address - first) / sizeof(struct Page);
+    assert(index < buddy_check_page_count);
+    assert(capacity <= buddy_check_page_count - index);
     assert((page2ppn(page) & (capacity - 1)) == 0);
     return index;
 }
 
-/* Touch only allocated physical memory, through the kernel's existing direct
- * mapping. Each page has three distinct address-dependent 64-bit canaries,
- * covering its start, interior and end (including rounding slack pages).
- */
-static uint64_t
-check_pattern(size_t index, size_t slot) {
-    return 0x2412819BADD1E000ULL ^
-           ((uint64_t)(nbase + index) * 0x9E3779B97F4A7C15ULL) ^
-           ((uint64_t)(slot + 1) * 0xD1B54A32D192ED03ULL);
+static uintptr_t
+buddy_check_marker(struct Page *page, size_t position) {
+    return (uintptr_t)0x2412819a5a5a5a5aULL ^ page2pa(page) ^
+           buddy_check_seed ^
+           ((uintptr_t)(position + 1) * (uintptr_t)0x9e3779b97f4a7c15ULL);
 }
 
 static void
-check_page_contents(size_t index, bool write) {
-    volatile uint64_t *memory = (volatile uint64_t *)
-        (page2pa(pages + index) + va_pa_offset);
-    const size_t offsets[] = {0, PGSIZE / sizeof(uint64_t) / 2,
-                              PGSIZE / sizeof(uint64_t) - 1};
-    for (size_t slot = 0; slot < 3; slot++) {
-        uint64_t expected = check_pattern(index, slot);
+buddy_check_page_data(struct Page *page, bool write) {
+    static const size_t offsets[] = {0, PGSIZE / 2,
+                                      PGSIZE - sizeof(uintptr_t)};
+    size_t position;
+    for (position = 0; position < 3; position++) {
+        volatile uintptr_t *word = (volatile uintptr_t *)(
+            page2pa(page) + va_pa_offset + offsets[position]);
+        uintptr_t marker = buddy_check_marker(page, position);
         if (write) {
-            memory[offsets[slot]] = expected;
+            *word = marker;
         } else {
-            assert(memory[offsets[slot]] == expected);
+            assert(*word == marker);
         }
     }
 }
 
 static void
-check_live_contents(void) {
-    for (size_t index = 0; index < check_descriptors; index++) {
-        if (check_owner[index] == 1) {
-            check_page_contents(index, 0);
+buddy_check_live_data(void) {
+    size_t index;
+    for (index = 0; index < buddy_check_page_count; index++) {
+        if (buddy_check_state[index] & BUDDY_CHECK_LIVE) {
+            buddy_check_page_data(pages + index, 0);
         }
+    }
+}
+
+static void
+buddy_check_reserved(void) {
+    size_t index;
+    for (index = 0; index < buddy_check_page_count; index++) {
+        assert((PageReserved(pages + index) != 0) ==
+               ((buddy_check_state[index] & BUDDY_CHECK_RESERVED) != 0));
     }
 }
 
 static struct Page *
-check_alloc(size_t request) {
+buddy_check_allocate(size_t request) {
+    size_t capacity = buddy_check_capacity(request);
     size_t before = nr_free_pages();
     struct Page *page = alloc_pages(request);
-    if (page == NULL) {
-        assert(nr_free_pages() == before);
-        return NULL;
-    }
-    size_t capacity = check_capacity(request);
+    size_t index, offset;
+
+    assert(page != NULL);
     assert(before >= capacity);
     assert(nr_free_pages() == before - capacity);
-    size_t index = check_index(page, capacity);
-    for (size_t offset = 0; offset < capacity; offset++) {
-        assert(check_owner[index + offset] == 0);
+    index = buddy_check_index(page, capacity);
+    /* Check the entire rounded extent, including padding beyond request. */
+    for (offset = 0; offset < capacity; offset++) {
         assert(!PageReserved(page + offset));
+        assert(!(buddy_check_state[index + offset] &
+                 (BUDDY_CHECK_RESERVED | BUDDY_CHECK_LIVE)));
     }
-    /* Validate overlap/reservation before writing any byte of this block. */
-    for (size_t offset = 0; offset < capacity; offset++) {
-        check_owner[index + offset] = 1;
-        check_page_contents(index + offset, 1);
+    for (offset = 0; offset < capacity; offset++) {
+        buddy_check_state[index + offset] |= BUDDY_CHECK_LIVE;
+        buddy_check_page_data(page + offset, 1);
     }
     return page;
 }
 
 static void
-check_free(struct Page *page, size_t original_request) {
-    size_t capacity = check_capacity(original_request);
-    size_t index = check_index(page, capacity);
-    for (size_t offset = 0; offset < capacity; offset++) {
-        assert(check_owner[index + offset] == 1);
-        check_page_contents(index + offset, 0);
-    }
+buddy_check_release(struct Page *page, size_t request) {
+    size_t capacity = buddy_check_capacity(request);
+    size_t index = buddy_check_index(page, capacity);
     size_t before = nr_free_pages();
-    free_pages(page, original_request);
+    size_t offset;
+
+    assert(capacity <= buddy_check_initial_free);
+    assert(before <= buddy_check_initial_free - capacity);
+    for (offset = 0; offset < capacity; offset++) {
+        assert(buddy_check_state[index + offset] & BUDDY_CHECK_LIVE);
+        buddy_check_page_data(page + offset, 0);
+    }
+    for (offset = 0; offset < capacity; offset++) {
+        buddy_check_state[index + offset] &= ~BUDDY_CHECK_LIVE;
+    }
+    /* Always use the original head and original request, not capacity. */
+    free_pages(page, request);
     assert(nr_free_pages() == before + capacity);
-    for (size_t offset = 0; offset < capacity; offset++) {
-        check_owner[index + offset] = 0;
-    }
 }
 
 static void
-check_failure(size_t request) {
-    assert(check_alloc(request) == NULL);
-    check_live_contents();
+buddy_check_failure(size_t request) {
+    size_t before = nr_free_pages();
+    buddy_check_live_data();
+    buddy_check_reserved();
+    assert(alloc_pages(request) == NULL);
+    assert(nr_free_pages() == before);
+    buddy_check_live_data();
+    buddy_check_reserved();
 }
 
 static void
-check_restored(size_t initial) {
-    assert(nr_free_pages() == initial);
-    for (size_t index = 0; index < check_descriptors; index++) {
-        assert(check_owner[index] != 1);
-        assert(!!PageReserved(pages + index) == (check_owner[index] == 2));
-    }
-}
-
-static void
-check_mixed_requests(size_t initial) {
+buddy_check_requests(void) {
     static const size_t requests[] = {1, 2, 3, 4, 5, 8, 9};
-    static const size_t release_order[] = {3, 0, 5, 1, 6, 2, 4};
-    struct Page *blocks[7];
-    for (size_t slot = 0; slot < 7; slot++) {
-        blocks[slot] = check_alloc(requests[slot]);
-        assert(blocks[slot] != NULL);
-        check_live_contents();
-        /* Failures must preserve both the count and all live contents. */
-        check_failure(0);
-        check_failure((size_t)-1);
-        check_failure(initial + 1);
+    static const size_t capacities[] = {1, 2, 4, 4, 8, 8, 16};
+    static const size_t release_order[] = {2, 0, 4, 1, 6, 3, 5};
+    static struct Page *blocks[7];
+    size_t index;
+
+    for (index = 0; index < 7; index++) {
+        size_t before = nr_free_pages();
+        blocks[index] = buddy_check_allocate(requests[index]);
+        /* Literal expected capacities provide an independent rounding oracle. */
+        assert(nr_free_pages() == before - capacities[index]);
+        buddy_check_live_data();
+        if (index == 3) {
+            buddy_check_failure(0);
+            buddy_check_failure((size_t)-1);
+            buddy_check_failure(buddy_check_page_count + 1);
+        }
     }
-    struct Page *temporary = check_alloc(9);
-    assert(temporary != NULL);
-    check_live_contents();
-    check_free(temporary, 9);
-    check_live_contents();
-    for (size_t slot = 0; slot < 7; slot++) {
-        size_t victim = release_order[slot];
-        check_free(blocks[victim], requests[victim]);
-        check_live_contents();
+    for (index = 0; index < 7; index++) {
+        size_t which = release_order[index];
+        buddy_check_release(blocks[which], requests[which]);
+        buddy_check_live_data();
     }
-    check_restored(initial);
+    assert(nr_free_pages() == buddy_check_initial_free);
+    buddy_check_reserved();
 }
 
-/* Every live allocation in this phase is a singleton, so ownership indexed by
- * descriptor is also a bounded, exact allocation record. Never infer adjacency
- * from allocation order or manipulate free lists to simulate exhaustion.
+/* All free memory has been acquired as single-page allocations.  Find the
+ * arena from physical alignment and recorded ownership, never allocation order.
  */
-static void
-check_exhaust(void) {
-    size_t remaining = nr_free_pages();
-    while (remaining != 0) {
-        assert(check_alloc(1) != NULL);
-        remaining--;
-        assert(nr_free_pages() == remaining);
-    }
-    check_failure(1);
-    check_failure(2);
-    check_failure(3);
-}
-
-static struct Page *
-check_find_aligned_run(size_t capacity) {
-    for (size_t index = 0; index < check_descriptors; index++) {
-        if (((nbase + index) & (capacity - 1)) != 0 ||
-            capacity > check_descriptors - index) {
+static size_t
+buddy_check_find_arena(void) {
+    size_t index, offset;
+    for (index = 0; index + 16 <= buddy_check_page_count; index++) {
+        if ((page2ppn(pages + index) & 15) != 0) {
             continue;
         }
-        size_t offset = 0;
-        while (offset < capacity && check_owner[index + offset] == 1) {
-            offset++;
+        for (offset = 0; offset < 16; offset++) {
+            if (!(buddy_check_state[index + offset] & BUDDY_CHECK_LIVE)) {
+                break;
+            }
         }
-        if (offset == capacity) {
-            return pages + index;
+        if (offset == 16) {
+            return index;
         }
     }
-    return NULL;
+    assert(0); /* The documented startup precondition requires such an arena. */
+    return 0;
 }
 
 static void
-check_fragmentation(void) {
-    size_t released = 0;
-    /* Free only even physical page numbers. No two free pages are buddies,
-     * although total free capacity is ample for many larger requests.
-     */
-    for (size_t index = 0; index < check_descriptors; index++) {
-        if (check_owner[index] == 1 && ((nbase + index) & 1) == 0) {
-            check_free(pages + index, 1);
-            released++;
-        }
-    }
-    assert(released >= 16 && nr_free_pages() == released);
-    check_failure(2);
-    check_failure(3);
-    check_failure(9);
-    check_exhaust();
-
-    /* The middle pages of a physically aligned four-page span are adjacent
-     * but NOT buddies. An adjacency-only coalescer must fail this assertion.
-     */
-    struct Page *span = check_find_aligned_run(4);
-    assert(span != NULL);
-    check_free(span + 1, 1);
-    check_free(span + 2, 1);
-    assert(nr_free_pages() == 2);
-    check_failure(2);
-    check_exhaust();
-}
-
-static void
-check_merge_and_split(void) {
-    static const size_t release_four[] = {7, 5, 6, 4};
-    static const size_t release_eight[] = {15, 9, 13, 11, 8, 10, 12, 14};
-    static const size_t release_split[] = {1, 3, 0, 2};
-    struct Page *span = check_find_aligned_run(16);
-    struct Page *split[4];
-    assert(span != NULL);
-
-    check_free(span, 1);
-    check_failure(2);                 // The other buddy is still live.
-    check_free(span + 1, 1);
-    struct Page *block = check_alloc(2);
-    assert(block == span);            // These are the only two free pages.
-    check_free(block, 2);
-    check_failure(4);
-    check_free(span + 3, 1);
-    check_failure(4);                 // Three free pages cannot form four.
-    check_free(span + 2, 1);
-    block = check_alloc(3);           // Coalesce to four, free by request 3.
-    assert(block == span);
-    check_free(block, 3);
-
-    for (size_t slot = 0; slot < 4; slot++) {
-        check_free(span + release_four[slot], 1);
-    }
-    block = check_alloc(5);           // Recursive coalescing to eight.
-    assert(block == span);
-    check_free(block, 5);
-    for (size_t slot = 0; slot < 8; slot++) {
-        check_free(span + release_eight[slot], 1);
-    }
-    block = check_alloc(9);           // Recursive coalescing to sixteen.
-    assert(block == span);
-    check_live_contents();
-    check_free(block, 9);
-
-    for (size_t slot = 0; slot < 4; slot++) {
-        split[slot] = check_alloc(3); // Split the recovered sixteen again.
-        assert(split[slot] != NULL);
-        assert(page2ppn(split[slot]) >= page2ppn(span));
-        assert(page2ppn(split[slot]) + 4 <= page2ppn(span) + 16);
-        check_live_contents();
+buddy_check_refill_singles(size_t arena, size_t span, size_t count) {
+    size_t index;
+    for (index = 0; index < count; index++) {
+        struct Page *page = buddy_check_allocate(1);
+        size_t allocated = buddy_check_index(page, 1);
+        assert(allocated >= arena && allocated - arena < span);
+        buddy_check_live_data();
     }
     assert(nr_free_pages() == 0);
-    check_failure(1);
-    for (size_t slot = 0; slot < 4; slot++) {
-        check_free(split[release_split[slot]], 3);
-        check_live_contents();
+}
+
+static void
+buddy_check_merging(void) {
+    size_t index, arena;
+    struct Page *pair, *whole, *first, *second, *third;
+
+    /* Exhaustion isolates the controlled holes from every unrelated free block.
+     * A byte per descriptor records ownership without a large stack array.
+     */
+    for (index = 0; index < buddy_check_initial_free; index++) {
+        buddy_check_allocate(1);
     }
-    block = check_alloc(16);
-    assert(block == span);
-    check_free(block, 16);
-    check_exhaust();                  // Restore singleton allocation records.
+    assert(nr_free_pages() == 0);
+    buddy_check_live_data();
+    buddy_check_failure(1);
+    buddy_check_failure(2);
+    buddy_check_failure(9);
+    arena = buddy_check_find_arena();
+
+    /* These are genuine order-zero buddies by physical page-number XOR. */
+    assert((page2ppn(pages + arena) ^ 1) == page2ppn(pages + arena + 1));
+    buddy_check_release(pages + arena, 1);
+    buddy_check_live_data();
+    buddy_check_failure(2);
+    buddy_check_release(pages + arena + 1, 1);
+    buddy_check_live_data();
+    pair = buddy_check_allocate(2);
+    assert(pair == pages + arena);
+    buddy_check_live_data();
+    buddy_check_release(pair, 2);
+    buddy_check_live_data();
+    buddy_check_refill_singles(arena, 2, 2);
+
+    /* Adjacent pages 1 and 2 cross a buddy boundary; two free pages must not
+     * satisfy an aligned two-page allocation, despite sufficient total space.
+     */
+    assert(page2ppn(pages + arena + 2) ==
+           page2ppn(pages + arena + 1) + 1);
+    assert((page2ppn(pages + arena + 1) ^ 1) !=
+           page2ppn(pages + arena + 2));
+    buddy_check_release(pages + arena + 1, 1);
+    buddy_check_live_data();
+    buddy_check_release(pages + arena + 2, 1);
+    buddy_check_live_data();
+    assert(nr_free_pages() == 2);
+    buddy_check_failure(2);
+    buddy_check_refill_singles(arena + 1, 2, 2);
+
+    /* Free alternating physical pages first: even eight free pages cannot
+     * satisfy two/eight-page requests while their buddies remain live.
+     */
+    for (index = 0; index < 16; index += 2) {
+        buddy_check_release(pages + arena + index, 1);
+        buddy_check_live_data();
+    }
+    assert(nr_free_pages() == 8);
+    buddy_check_failure(2);
+    buddy_check_failure(8);
+    for (index = 1; index < 16; index += 2) {
+        buddy_check_release(pages + arena + index, 1);
+        buddy_check_live_data();
+    }
+    assert(nr_free_pages() == 16);
+    whole = buddy_check_allocate(9);
+    assert(whole == pages + arena); /* Requires all four merge levels. */
+    buddy_check_live_data();
+    buddy_check_failure(1);
+    buddy_check_release(whole, 9);
+    buddy_check_live_data();
+
+    /* Split the merged extent again, including rounded requests released with
+     * their original 3/5/3 values.  No choice of allocation order is assumed.
+     */
+    first = buddy_check_allocate(3);
+    buddy_check_live_data();
+    second = buddy_check_allocate(5);
+    buddy_check_live_data();
+    third = buddy_check_allocate(3);
+    buddy_check_live_data();
+    assert(nr_free_pages() == 0);
+    buddy_check_failure(1);
+    buddy_check_release(second, 5);
+    buddy_check_live_data();
+    buddy_check_release(first, 3);
+    buddy_check_live_data();
+    buddy_check_release(third, 3);
+    buddy_check_live_data();
+    assert(nr_free_pages() == 16);
+    buddy_check_refill_singles(arena, 16, 16);
+
+    /* Every live allocation is now a singleton again.  Check each survivor
+     * before its release; do not reset allocator state to conceal a leak.
+     */
+    buddy_check_live_data();
+    for (index = 0; index < buddy_check_page_count; index++) {
+        if (buddy_check_state[index] & BUDDY_CHECK_LIVE) {
+            buddy_check_release(pages + index, 1);
+        }
+    }
+    assert(nr_free_pages() == buddy_check_initial_free);
+    buddy_check_reserved();
 }
 
 void
 buddy_check(void) {
+    size_t index, round;
+
     assert(pmm_manager == &buddy_pmm_manager);
     assert(npage >= nbase);
-    check_descriptors = npage - nbase;
-    assert(check_descriptors <= CHECK_MAX_PAGES);
-    size_t initial = nr_free_pages();
-    assert(initial >= 64);            // Basic mixed-request peak is 59 pages.
-    assert(initial <= check_descriptors);
-    size_t available = 0;
-    for (size_t index = 0; index < check_descriptors; index++) {
-        check_owner[index] = PageReserved(pages + index) ? 2 : 0;
-        available += check_owner[index] == 0;
+    buddy_check_page_count = npage - nbase;
+    assert(buddy_check_page_count <= BUDDY_CHECK_MAX_PAGES);
+    buddy_check_initial_free = nr_free_pages();
+    assert(buddy_check_initial_free >= 64);
+    assert(buddy_check_initial_free <= buddy_check_page_count);
+    for (index = 0; index < buddy_check_page_count; index++) {
+        buddy_check_state[index] = PageReserved(pages + index) ?
+                                  BUDDY_CHECK_RESERVED : 0;
     }
-    /* page_init has finished and there are no other live allocations. Every
-     * nonreserved descriptor must therefore be represented in the free count.
-     * This also catches dropped tails in a non-power-of-two initial region.
-     */
-    assert(initial == available);
 
-    /* Run the complete suite twice. The second pass detects stale allocation
-     * metadata/list corruption that a final count-only check would overlook.
-     */
-    for (size_t pass = 0; pass < 2; pass++) {
-        cprintf("buddy_check: pass %lu, initial free pages %lu\n", pass + 1,
-                initial);
-        check_failure(0);
-        check_failure((size_t)-1);
-        check_failure(initial + 1);
-        check_mixed_requests(initial);
-        check_exhaust();
-        check_fragmentation();
-        check_merge_and_split();
-        /* Nonuniform final release: forward odd indices, reverse even ones. */
-        for (size_t index = 1; index < check_descriptors; index += 2) {
-            if (check_owner[index] == 1) {
-                check_free(pages + index, 1);
-            }
+    for (round = 0; round < 2; round++) {
+        cprintf("buddy_check() round %lu: initial free pages = %lu\n",
+                (unsigned long)(round + 1),
+                (unsigned long)buddy_check_initial_free);
+        buddy_check_seed = (uintptr_t)(round + 1) *
+                           (uintptr_t)0xd1b54a32d192ed03ULL;
+        buddy_check_failure(0);
+        buddy_check_failure((size_t)-1);
+        buddy_check_failure(buddy_check_initial_free + 1);
+        buddy_check_requests();
+        buddy_check_merging();
+        for (index = 0; index < buddy_check_page_count; index++) {
+            assert(!(buddy_check_state[index] & BUDDY_CHECK_LIVE));
         }
-        for (size_t cursor = check_descriptors; cursor != 0; cursor--) {
-            size_t index = cursor - 1;
-            if ((index & 1) == 0 && check_owner[index] == 1) {
-                check_free(pages + index, 1);
-            }
-        }
-        check_restored(initial);
+        assert(nr_free_pages() == buddy_check_initial_free);
+        buddy_check_reserved();
     }
     cprintf("buddy_check() succeeded!\n");
 }

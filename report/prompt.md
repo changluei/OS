@@ -66,22 +66,15 @@ static void init_pmm_manager(void);
 
 ````text
 [PROMPT]
-**任务**：阅读 code/kern/mm/default_pmm.c，在 report/report.md 的 First-Fit 章节说明初始化、连续页分配、回收和合并的行为，并回答算法是否存在进一步改进空间。
-**操作要求**：实际更新报告对应章节，保留其他实验内容；不修改 First-Fit 源码、课程框架或测试，不将已有算法列为本组新增实现。
-**输出要求**：依据真实源码解释数据结构、不变量和边界行为，给出改进思路及其代价，不用抽象算法描述代替对工程代码的分析。
+任务：阅读 code/kern/mm/default_pmm.c，更新 report/report.md 的 4.2 First-Fit 分析和改进思考题。
+操作要求：只用 apply_patch 修改该章节，不修改代码、其他章节或其他文档；以当前源码为准，不从 Git 历史复制答案。
+输出要求：说明初始化、分配、释放、合并和改进代价，不把课程已有实现算作本人新增代码。
 
 [RELY]
-default_pmm.c 使用 free_area_t，其定义来自 memlayout.h：
-```c
-typedef struct {
-    list_entry_t free_list;
-    unsigned int nr_free;
-} free_area_t;
-```
-空闲链表节点为 struct Page 的 page_link，块首 property 表示连续空闲页数，PG_property 标识空闲块首。pmm.c 的 alloc_pages()/free_pages()/nr_free_pages() 转发给当前管理器。连续描述符对应连续物理页，但描述符本身不等同于物理页。
+真实 free_area_t 包含 list_entry_t free_list 和 unsigned int nr_free；Page 的 property 记录空闲块页数，PG_property 标记块首，page_link 连接空闲链。pmm.c 将公开页面操作转交当前管理器。参考 default_pmm.c、pmm.h、memlayout.h 和 libs/list.h。
 
 [GUARANTEE]
-必须完成报告中的 First-Fit 功能分析及改进问题回答，覆盖以下既有接口；这些接口仅供分析，不重新实现：
+完成本章对以下已有函数的分析，不重新实现：
 ```c
 static void default_init(void);
 static void default_init_memmap(struct Page *base, size_t n);
@@ -91,24 +84,13 @@ static size_t default_nr_free_pages(void);
 ```
 
 [SPECIFICATION]
-## default_init / default_init_memmap 的分析
-**Pre-Condition**：已阅读真实实现，登记区间合法且尚未被分配器管理。
-**Post-Condition**：报告说明空链与计数的初始状态、区间登记后的标记和引用状态、块首长度及空闲计数含义。
-
-## default_alloc_pages 的分析
-**Pre-Condition**：分配器已初始化，调用者请求 n > 0 个连续页。
-**Post-Condition**：报告解释按地址顺序选择首个可容纳块、整块交付与余块保留，以及计数变化。
-**Case 1**：存在合适连续块时，说明恰好匹配与需要拆分的区别。
-**Case 2**：不存在足够大的连续块时，说明返回 NULL 的原因，区分总空闲页数与最大连续块长度。
-
-## default_free_pages / default_nr_free_pages 的分析
-**Pre-Condition**：归还的是合法持有且尚未释放的连续页，n > 0。
-**Post-Condition**：报告解释归还页状态、按地址登记、前后相邻块合并和准确空闲计数；合并不能跨过占用页或保留区。
-
-## 改进问题回答
-**Pre-Condition**：已经明确当前线性链表策略及其复杂度。
-**Post-Condition**：至少分析搜索成本和外部碎片，提出分级索引、平衡树、位图或 Next-Fit 等可选方向，并说明索引维护成本、空间开销及请求分布的影响。
-**Requirements**：不能将 Best-Fit 描述为所有场景下都更优；应区分分配策略、物理连续性和虚拟地址翻译。
+## 流程分析
+Pre-Condition：已经阅读真实实现，区间和调用满足各函数的合法输入约定。
+Post-Condition：解释空链和计数初始化、页面登记的标记和引用状态、首个适配选择及余块拆分、地址有序释放和相邻合并，说明各步骤的计数变化。
+Case：说明恰好匹配、需要拆分、连续空间不足和前后邻块可合并的不同情况；总空闲页足够不保证连续分配成功。
+## 改进思考题
+Pre-Condition：已明确当前地址有序链表策略。
+Post-Condition：回答搜索和插入的复杂度，分析减少搜索成本、缓解外部碎片的可选方案及索引维护代价；不能认为 Best-Fit 总是优于 First-Fit。
 ````
 
 ## 三、Best-Fit 连续物理页分配
@@ -117,28 +99,19 @@ static size_t default_nr_free_pages(void);
 
 ````text
 [PROMPT]
-**任务**：在 code/kern/mm/best_fit_pmm.c 的学生实现区域完成 Best-Fit 页分配模块，提供完整的物理页管理器注册，使原课程自检能够通过。
-**操作要求**：必须修改实际文件；保留已有正确实现及 lab2、2412819 标记。不得修改 basic_check()、best_fit_check()、公共头文件、Makefile 或其他模块。已存在的 SLUB 组合检查接入保持原样。
-**输出要求**：以真实接口和测试契约为准，说明修改内容、原测试兼容性及实际运行结果；不通过删改断言或评分脚本获取通过结果。
+任务：从 lab2 初始框架补全 code/kern/mm/best_fit_pmm.c 的 Best-Fit 分配器。
+操作要求：用 apply_patch 修改这个真实文件；保留 lab2，填入学号 2412819。不得修改 basic_check()、best_fit_check()、组长的 best_fit_and_slub_check()、公共文件或他人模块。不从 Git 历史复制旧实现，不运行构建、提交或新增其他文件。
+输出要求：按下面真实接口和规格完成代码，说明设计、实际改动与未验证项。
 
 [RELY]
-参考 default_pmm.c、pmm.h、memlayout.h 和 libs/list.h。真实管理状态类型为：
+阅读 default_pmm.c、pmm.h、memlayout.h、libs/list.h。真实定义为：
 ```c
-struct Page {
-    int ref;
-    uint64_t flags;
-    unsigned int property;
-    list_entry_t page_link;
-};
-typedef struct {
-    list_entry_t free_list;
-    unsigned int nr_free;
-} free_area_t;
+struct Page { int ref; uint64_t flags; unsigned int property; list_entry_t page_link; };
+typedef struct { list_entry_t free_list; unsigned int nr_free; } free_area_t;
 ```
-pmm_manager 的接口成员为 name、init、init_memmap、alloc_pages、free_pages、nr_free_pages、check，签名以 pmm.h 为准。可使用现有页标记宏、set_page_ref()、le2page() 和链表操作。原测试直接保存并恢复 free_list、nr_free，也会合法地分段归还页面；实现必须兼容这一状态约定。
+可用页标记宏、set_page_ref、le2page 和链表接口。连续描述符对应连续物理页。原测试直接保存和恢复 free_list/nr_free，并合法分段归还页面；组长已提供 Best-Fit 与 SLUB 的组合检查函数。
 
 [GUARANTEE]
-必须实现并注册：
 ```c
 static void best_fit_init(void);
 static void best_fit_init_memmap(struct Page *base, size_t n);
@@ -147,34 +120,24 @@ static void best_fit_free_pages(struct Page *base, size_t n);
 static size_t best_fit_nr_free_pages(void);
 const struct pmm_manager best_fit_pmm_manager;
 ```
-允许增加模块内部 static 辅助函数和状态；不更改公开接口或原有测试函数。
+内部辅助函数和状态设为 static；管理器名称为 best_fit_pmm_manager，check 指向保留的 best_fit_and_slub_check。
 
 [SPECIFICATION]
 ## best_fit_init
-**Pre-Condition**：尚无活动分配，管理器即将开始登记空闲区间。
-**Post-Condition**：空闲集合为空，空闲页计数为零，后续区间登记可正常进行。
-
+Pre-Condition：尚无活动分配。
+Post-Condition：空闲链为空，空闲数为零。
 ## best_fit_init_memmap
-**Pre-Condition**：n > 0，区间位于描述符数组内，各页仍为保留状态且未重复登记。
-**Post-Condition**：这 n 页全部进入空闲集合，引用计数归零，管理标记和块长度一致，空闲计数增加 n；区间外状态不受影响。
-
+Pre-Condition：n>0，区间合法、保留且未登记。
+Post-Condition：全部 n 页进入空闲集合，引用归零，计数增加 n，区间外页面不变。
 ## best_fit_alloc_pages
-**Pre-Condition**：管理器已初始化，n > 0，串行调用。
-**Post-Condition**：成功时交付恰好 n 个连续页，与其他活动分配不重叠，计数扣除 n；失败返回 NULL，状态不变。
-**Case 1**：存在多个候选块时，选择容量最小的可容纳块，同大小选低地址块。
-**Case 2**：候选块容量恰好为 n 时完整交付；容量大于 n 时，剩余页面仍可分配，相关块首标记、长度和链表关系有效。
-**Case 3**：总空闲页不足，或因外部碎片不存在足够大的连续块时，返回 NULL，不破坏原状态。
-
+Pre-Condition：已初始化，n>0，串行调用。
+Post-Condition：选择最小可容纳块，同大小选低地址；交付恰好 n 页，余块可继续分配。无合适块返回 NULL，状态不变。
 ## best_fit_free_pages
-**Pre-Condition**：base 起的 n > 0 个连续页为合法持有页；支持合法分段归还，但不允许重复释放或释放保留页。
-**Post-Condition**：计数准确增加 n；归还区间与前后物理相邻空闲块能够合并，其他活动分配保持有效。
-**Case 1**：没有相邻空闲块时，区间作为独立空闲块登记。
-**Case 2**：仅前侧、仅后侧或两侧存在物理相邻空闲块时，形成对应的完整连续空闲块，计数不重复增加。
-
-## best_fit_nr_free_pages / best_fit_pmm_manager
-**Pre-Condition**：管理器状态已初始化。
-**Post-Condition**：返回值准确反映全部空闲页；注册结构的各函数指针有效，原课程检查通过既有入口执行。
-**Requirements**：空闲块首标记、块长度、链表和计数保持一致；不得修改原测试保存/恢复状态的约定。原有 SLUB 组合回调不得因本模块补全被删除。
+Pre-Condition：归还合法持有的 n>0 个连续页，支持合法分段归还，不重复释放。
+Post-Condition：计数增加 n，与前后物理相邻空闲块合并，不跨越占用页或保留区。
+## best_fit_nr_free_pages / 注册
+Pre-Condition：管理器已初始化。
+Post-Condition：空闲计数准确，接口注册完整，兼容原测试状态保存与恢复，保留 SLUB 组合检查。
 ````
 
 ## 四、Buddy System 分配模块
@@ -183,21 +146,18 @@ const struct pmm_manager best_fit_pmm_manager;
 
 ````text
 [PROMPT]
-**任务**：在 code/kern/mm/buddy_pmm.c、buddy_pmm.h 中实现 Buddy 物理页分配模块，通过 pmm_manager 接口提供分配、释放和空闲页统计。
-**操作要求**：必须修改这两个实际文件，保留 lab2 和 2412819 标记；只使用现有框架接口，不修改 Page 布局、pmm.c、Makefile、其他分配器或 buddy_check.c。通过已有临时副本验证入口完成接入验证，不在课程框架内增加后端切换逻辑。
-**输出要求**：说明接口、请求容量取整和释放配对约定，报告实际编译/运行结果与限制。
+任务：从零创建 code/kern/mm/buddy_pmm.c、buddy_pmm.h，实现 Buddy 物理页分配器。
+操作要求：用 apply_patch 创建真实文件，保留 lab2 和学号 2412819；不改 Page、pmm.c、Makefile、其他模块或测试，不从 Git 历史复制旧实现，不运行构建或提交。其他管理器由现有 tools/lab2_verify.py 在临时副本中接入。
+输出要求：依据下面规格完成代码，说明取整容量、释放约定及未验证项。
 
 [RELY]
-pmm.h 提供 struct pmm_manager、页状态和页面转换接口。PGSIZE=4096，DRAM_BASE=0x80000000，PHYSICAL_MEMORY_END=0x88000000，当前框架管理窗口不超过 128 MiB。
+阅读 pmm.h、memlayout.h、libs/list.h，真实结构为：
 ```c
-extern struct Page *pages;
-extern size_t npage;
-extern const size_t nbase;
+struct Page { int ref; uint64_t flags; unsigned int property; list_entry_t page_link; };
 ```
-有效描述符数量为 npage - nbase；pages[i] 对应物理页号 nbase+i。可使用 page2ppn()、page2pa()、页状态宏、set_page_ref() 及现有链表接口，不依赖 malloc()。独立测试在 buddy_check.c 提供 void buddy_check(void)。
+PGSIZE=4096，pages[i] 对应物理页号 nbase+i，有效描述符数为 npage-nbase；当前物理管理窗口最多 128 MiB。可用页状态宏、page2ppn/page2pa、set_page_ref、链表接口，不使用 malloc。独立文件将提供 void buddy_check(void)。
 
 [GUARANTEE]
-必须实现：
 ```c
 static void buddy_init(void);
 static void buddy_init_memmap(struct Page *base, size_t n);
@@ -206,37 +166,26 @@ static void buddy_free_pages(struct Page *base, size_t n);
 static size_t buddy_nr_free_pages(void);
 const struct pmm_manager buddy_pmm_manager;
 ```
-buddy_pmm.h 声明 buddy_pmm_manager 和 buddy_check()；管理器 check 入口连接独立测试。允许添加模块内部 static 状态和辅助函数。
+头文件声明管理器和 buddy_check；check 指向 buddy_check，名称为 Buddy System；辅助函数和状态为 static。
 
 [SPECIFICATION]
 ## buddy_init
-**Pre-Condition**：首次初始化，尚无活动分配。
-**Post-Condition**：各阶空闲集合为空，空闲页计数为零，支持后续区间登记。
-
+Pre-Condition：首次使用，没有活动分配。
+Post-Condition：各阶空闲集合为空，计数为零。
 ## buddy_init_memmap
-**Pre-Condition**：n > 0，区间合法、仍为保留状态、未登记；多次登记的区间不重叠。
-**Post-Condition**：全部 n 页可管理，引用状态正确，计数增加 n；不丢失合法尾页，不纳入区间外或保留页面。
-**Case 1**：区间起点与长度恰好满足相应阶对齐时，登记后容量完整可用。
-**Case 2**：起点未按大块对齐或长度不是 2 的幂时，仍完整覆盖原合法区间，不因取整丢页。
-
+Pre-Condition：n>0，区间合法、保留且未登记；多次登记不重叠。
+Post-Condition：全部 n 页可管理，引用归零，计数增加 n；未对齐起点、非 2 次幂长度不丢页，不纳入区间外或保留页。
 ## buddy_alloc_pages
-**Pre-Condition**：管理器已初始化，串行调用。
-**Post-Condition**：成功时返回不小于 n 的最小 2 次幂容量，物理页号按实际容量对齐，与其他活动块不重叠，计数扣除实际容量。
-**Case 1**：n 是 2 的幂且有足够连续容量时，交付对应容量。
-**Case 2**：n 不是 2 的幂时，交付最小取整容量，并保留正确释放该分配所需的信息。
-**Case 3**：n 为零、超过管理范围、取整溢出、页面不足或不存在合适连续块时，返回 NULL；空闲计数及其他存活数据保持不变。
-
+Pre-Condition：已初始化，单核串行调用。
+Post-Condition：成功返回不小于 n 的最小 2 次幂容量，物理页号按容量对齐，与活动块不重叠，扣除实际容量。
+Case：零请求、超范围、取整溢出、页面不足或无合适连续块时返回 NULL，状态不变。
 ## buddy_free_pages
-**Pre-Condition**：base 是该次分配的原首指针，n 是原始请求；分配仍有效，不支持分段或重复释放。
-**Post-Condition**：完整归还该次分配的实际容量，准确恢复计数；其他分配不受影响，满足条件的伙伴能够逐级合并。
-**Case 1**：申请 3 页实际占用 4 页时，按原请求 3 释放必须归还全部 4 页。
-**Case 2**：真正的同阶空闲伙伴可以合并；仅地址相邻但非伙伴、已分配块或区间外页面不能误合并。
-**Requirements**：伙伴关系基于实际物理页号与块容量，不能使用描述符指针或虚拟地址直接判断。违反释放前置条件可断言拒绝，不承诺安全识别任意野指针。
-
-## buddy_nr_free_pages / buddy_pmm_manager
-**Pre-Condition**：管理器已初始化。
-**Post-Condition**：空闲数准确，注册完整，能够通过公共页面接口及独立检查入口使用。
-**Requirements**：覆盖当前窗口所需的阶范围；本实验限定单核串行，不要求实现并发分配或 NUMA。
+Pre-Condition：传回原首指针及原始请求 n，分配仍有效；不支持子段或重复释放。
+Post-Condition：完整归还实际容量，仅与同阶空闲的真正伙伴逐级合并，不影响其他分配。申请 3 页占用 4 页，释放传 3，回收 4 页。
+Requirements：按实际物理页号判断伙伴，不能把仅相邻的块误合并；不承诺安全识别任意野指针。
+## buddy_nr_free_pages / 注册
+Pre-Condition：已初始化。
+Post-Condition：空闲计数准确，管理器和头文件接口完整，支持独立测试及当前管理窗口。
 ````
 
 ## 五、Buddy 独立测试
@@ -245,37 +194,55 @@ buddy_pmm.h 声明 buddy_pmm_manager 和 buddy_check()；管理器 check 入口�
 
 ````text
 [PROMPT]
-**任务**：在 code/kern/mm/buddy_check.c 中实现 Buddy 的独立自检，通过公开契约验证容量、对齐、数据保持、伙伴合并及资源回收。
-**操作要求**：必须修改实际自检文件，只修改该文件及其内部 static 辅助函数；不改 Buddy 算法、公共框架或课程测试，不读取分配器私有链表、阶数编码或私有计数来构造通过结果。
-**输出要求**：说明每类测试检查的行为及其有效性，给出真实执行结果和覆盖限制；失败不能被忽略或转换为成功。
+任务：从零创建 code/kern/mm/buddy_check.c，独立验证 Buddy 分配器。
+操作要求：用 apply_patch 创建真实文件，保留 lab2 和学号 2412819；只改这个文件。不读 buddy_pmm.c 的私有实现，不改算法、框架或课程测试，不从 Git 历史复制旧测试，不运行构建或提交。
+输出要求：说明覆盖的行为、为何有效、实际改动和测试局限，不把未执行的检查写成已通过。
 
 [RELY]
-真实公开接口为：
+真实公开接口来自 pmm.h、buddy_pmm.h：
 ```c
 struct Page *alloc_pages(size_t n);
 void free_pages(struct Page *base, size_t n);
 size_t nr_free_pages(void);
 extern const struct pmm_manager buddy_pmm_manager;
-extern const struct pmm_manager *pmm_manager;
 ```
-可用 pages、npage、nbase、PageReserved()、page2ppn()、page2pa()、va_pa_offset、assert() 和 cprintf()。Buddy 占用最小 2 次幂容量，释放传回原首指针与原始请求。PGSIZE=4096，内核栈为两页；物理页的内核虚拟地址由 page2pa(page)+va_pa_offset 得到。
+可用 pages、npage、nbase、pmm_manager、PageReserved、page2ppn/page2pa、va_pa_offset、assert、cprintf。PGSIZE=4096，内核栈 8 KiB。Buddy 按最小 2 次幂容量分配，释放用原首指针和原请求；失败返回 NULL 且状态不变。
 
 [GUARANTEE]
-必须实现：
 ```c
 void buddy_check(void);
 ```
-辅助函数设为 static；大规模记录放静态存储，不放入有限内核栈。
+辅助函数设为 static，大记录数组放静态存储，不新增日志或工具。
 
 [SPECIFICATION]
 ## buddy_check
-**Pre-Condition**：当前管理器为 Buddy，初始化和空闲区登记完成；单核串行、无其他活动分配。标准启动空闲区至少有 64 页，并存在 16 页对齐的连续区域，满足合并测试的连续性前提。
-**Post-Condition**：全部测试分配均被配对释放，空闲页数恢复初值，保留页不变，分配器仍可继续使用；只有所有断言通过后才输出 buddy_check() succeeded!。
-**Case 1**：检查 1/2/3/4/5/8/9 页请求的实际容量扣减、物理对齐和整个占用区间不重叠；在页面首部、中部、末尾写入标记并反复核对存活数据。
-**Case 2**：检查零请求、超大请求、容量不足和耗尽情况下的失败，确认返回 NULL、计数不变且已有分配内容完整。
-**Case 3**：构造有足够总空闲页但无足够连续块的碎片场景；检查真正伙伴可合并、相邻非伙伴不可误合并，以及多阶合并后能够再次拆分。
-**Case 4**：以原请求释放非 2 次幂分配，使用不同释放顺序检验状态恢复；完整测试重复两轮，发现陈旧元数据和链表破坏。
-**Requirements**：依据返回的物理地址识别伙伴，不能假设申请顺序决定物理相邻。每个阶段保留并检查存活数据；不能重置管理器或修改统计来掩盖泄漏。初始总空闲数不能替代连续区域前提。
+Pre-Condition：当前管理器是 Buddy，初始化后无其他活动分配，单核串行；标准启动空闲区至少 64 页，并存在 16 页对齐的连续区域。
+Post-Condition：所有测试分配配对释放，空闲页数恢复、保留状态不变；完整重复两轮且所有断言通过后才输出 buddy_check() succeeded!。
+Case 1：验证 1/2/3/4/5/8/9 页请求的取整容量、物理对齐、描述符范围和完整占用区间互不重叠。
+Case 2：在每页首部、中部、末尾写标记，后续分配及释放后复查存活数据，检查误覆盖。
+Case 3：检查零请求、超大请求、耗尽及碎片导致的失败，确认空闲计数和存活内容不变。
+Case 4：检查真正伙伴合并、相邻非伙伴不误合并、多阶合并后再次拆分，以及非 2 次幂请求按原请求释放。
+Requirements：只检查公开行为，不读取私有链表、阶数编码或私有计数；根据实际物理地址识别伙伴，不假设申请顺序决定相邻，不重置分配器掩盖泄漏。
+````
+
+### 测试修正提示词
+
+````text
+[PROMPT]
+任务：修正 code/kern/mm/buddy_check.c 的描述符记录数组上限。
+操作要求：仅用 apply_patch 修改这个文件，不修改算法、其他文件或测试断言，不运行构建或提交。
+输出要求：说明上限计算为何错误、实际修正及未验证项；每轮打印轮次与初始空闲页数，最终成功标记保持不变。
+
+[RELY]
+KMEMSIZE=0x7e00000，只描述内核映射窗口；PHYSICAL_MEMORY_END=0x88000000，DRAM_BASE=0x80000000，PGSIZE=4096。描述符数量 npage-nbase 包括前 2 MiB 的保留页，所以 128 MiB 配置有 32768 个描述符，而 KMEMSIZE/PGSIZE 只有 32256。
+
+[GUARANTEE]
+保留 void buddy_check(void)，修正私有 BUDDY_CHECK_MAX_PAGES 及对应静态记录数组的容量。
+
+[SPECIFICATION]
+## buddy_check 的容量与输出
+Pre-Condition：标准启动、描述符覆盖当前物理管理窗口，保留页也必须记录。
+Post-Condition：静态记录能容纳 (PHYSICAL_MEMORY_END-DRAM_BASE)/PGSIZE 个描述符，不截断、不跳过保留状态检查；完整两轮通过后才输出成功，每轮输出轮次和初始空闲页数。
 ````
 
 ## 六、SLUB 对象分配模块
