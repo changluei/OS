@@ -53,9 +53,28 @@ bash tools/verify_init.sh
 python3 tools/debug_mmu.py --qemu-source /tmp/qemu
 ```
 
-最后一个命令需要 QEMU 4.1.1 源码及未剥离的构建文件。本机容器已保留 `/tmp/qemu`；新环境准备见 [源码调试环境说明](report/report.md#qemu-source-setup)。初始化宿主机用例也可在 macOS 上执行 `python3 code/tools/check_page_init.py`，需要本机 C 编译器。
+最后一个命令需要 QEMU 4.1.1 源码及未剥离的构建文件。本机容器已保留 `/tmp/qemu`；新环境准备见 [下方源码调试环境](#qemu-源码调试环境)。初始化宿主机用例也可在 macOS 上执行 `python3 code/tools/check_page_init.py`，需要本机 C 编译器。
 
 本机原有容器名为 `os-labs-lab-1`，名称与当前实验无关。它挂载当前 `code/`，可使用 `docker exec os-labs-lab-1 ...` 执行以上命令。原本地 `code/dev`、`code/environment/` 保持不变且未纳入 Git；其中旧验证流程面向 Lab 1，不作为 Lab 2 的复验入口。
+
+### QEMU 源码调试环境
+
+源码调试需要 QEMU 4.1.1 源码及带调试符号、未剥离的构建文件。本次使用容器 `/tmp/qemu` 下已有构建；以下命令供新 Linux/WSL 环境准备相同版本使用，不替换系统安装的 QEMU。
+
+```bash
+sudo apt-get update
+sudo apt-get install -y gcc g++ make pkg-config python3 wget xz-utils bzip2 \
+  libglib2.0-dev libpixman-1-dev libfdt-dev gdb-multiarch
+wget https://download.qemu.org/qemu-4.1.1.tar.xz
+tar -xJf qemu-4.1.1.tar.xz
+cd qemu-4.1.1
+./configure --python=python3 --target-list=riscv64-softmmu \
+  --enable-debug --disable-strip --disable-werror --disable-docs \
+  --disable-tools --disable-guest-agent --disable-capstone
+make -j4
+```
+
+准备后，在仓库 `code/` 中运行 `python3 tools/debug_mmu.py --qemu-source /path/to/qemu-4.1.1`，将路径替换为实际构建目录。实验观察及结论见 [报告 GDB 部分](report/report.md#qemu-source-setup)。
 
 ## 交付证据
 

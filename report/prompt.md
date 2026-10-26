@@ -1,4 +1,8 @@
-# Lab 2 规范化提示词
+# Lab 2 编程任务提示词
+
+练习页要求为物理内存初始化、Best-Fit、Buddy 实现与测试、SLUB 实现与测试分别设计提示词，共六份。以下保留这六份正文，以及 Buddy 测试实际迭代时追加的一份修正提示词。
+
+First-Fit 和 Challenge 为思考题，分析见实验报告；GDB 部分记录 AI 辅助定位源码、解释现象和核对调试结果的过程，不另列为编写调试脚本的任务。
 
 ## 一、物理内存探测与页描述符初始化
 
@@ -60,40 +64,7 @@ static void init_pmm_manager(void);
 **Requirements**：仅调整要求的管理器选择，保留原初始化顺序、输出和调用关系；不增加构建配置或切换分支。
 ````
 
-## 二、First-Fit 分析与思考题
-
-负责人：2412819-李子谦。此项为源码分析与报告任务。
-
-````text
-[PROMPT]
-任务：阅读 code/kern/mm/default_pmm.c，更新 report/report.md 的 4.2 First-Fit 分析和改进思考题。
-操作要求：只用 apply_patch 修改该章节，不修改代码、其他章节或其他文档；以当前源码为准，不从 Git 历史复制答案。
-输出要求：说明初始化、分配、释放、合并和改进代价，不把课程已有实现算作本人新增代码。
-
-[RELY]
-真实 free_area_t 包含 list_entry_t free_list 和 unsigned int nr_free；Page 的 property 记录空闲块页数，PG_property 标记块首，page_link 连接空闲链。pmm.c 将公开页面操作转交当前管理器。参考 default_pmm.c、pmm.h、memlayout.h 和 libs/list.h。
-
-[GUARANTEE]
-完成本章对以下已有函数的分析，不重新实现：
-```c
-static void default_init(void);
-static void default_init_memmap(struct Page *base, size_t n);
-static struct Page *default_alloc_pages(size_t n);
-static void default_free_pages(struct Page *base, size_t n);
-static size_t default_nr_free_pages(void);
-```
-
-[SPECIFICATION]
-## 流程分析
-Pre-Condition：已经阅读真实实现，区间和调用满足各函数的合法输入约定。
-Post-Condition：解释空链和计数初始化、页面登记的标记和引用状态、首个适配选择及余块拆分、地址有序释放和相邻合并，说明各步骤的计数变化。
-Case：说明恰好匹配、需要拆分、连续空间不足和前后邻块可合并的不同情况；总空闲页足够不保证连续分配成功。
-## 改进思考题
-Pre-Condition：已明确当前地址有序链表策略。
-Post-Condition：回答搜索和插入的复杂度，分析减少搜索成本、缓解外部碎片的可选方案及索引维护代价；不能认为 Best-Fit 总是优于 First-Fit。
-````
-
-## 三、Best-Fit 连续物理页分配
+## 二、Best-Fit 连续物理页分配
 
 负责人：2412819-李子谦。
 
@@ -140,7 +111,7 @@ Pre-Condition：管理器已初始化。
 Post-Condition：空闲计数准确，接口注册完整，兼容原测试状态保存与恢复，保留 SLUB 组合检查。
 ````
 
-## 四、Buddy System 分配模块
+## 三、Buddy System 分配模块
 
 负责人：2412819-李子谦。本提示词仅负责分配器，实现与测试分开。
 
@@ -188,7 +159,7 @@ Pre-Condition：已初始化。
 Post-Condition：空闲计数准确，管理器和头文件接口完整，支持独立测试及当前管理窗口。
 ````
 
-## 五、Buddy 独立测试
+## 四、Buddy 独立测试
 
 负责人：2412819-李子谦。
 
@@ -245,7 +216,7 @@ Pre-Condition：标准启动、描述符覆盖当前物理管理窗口，保留�
 Post-Condition：静态记录能容纳 (PHYSICAL_MEMORY_END-DRAM_BASE)/PGSIZE 个描述符，不截断、不跳过保留状态检查；完整两轮通过后才输出成功，每轮输出轮次和初始空闲页数。
 ````
 
-## 六、SLUB 对象分配模块
+## 五、SLUB 对象分配模块
 
 负责人：2412852-梁靖泽。本提示词仅负责对象分配器。
 
@@ -320,7 +291,7 @@ size_t slub_nr_live_objects(void);
 **Requirements**：本实验不要求 NUMA、per-CPU 缓存或并发锁；元数据必须与用户可写范围隔离，底层页分配和释放严格配对。
 ````
 
-## 七、SLUB 独立测试
+## 六、SLUB 独立测试
 
 负责人：2412852-梁靖泽。
 
@@ -360,84 +331,4 @@ int slub_check(void);
 **Case 5**：分配超过两页的对象，写入并读回整个请求范围后释放，确认大对象页面完整回收。
 **Case 6**：同时保留小对象和大对象后执行 shutdown，确认统计清零、未初始化时分配失败；重新初始化成功，最终空闲页数与测试开始一致。
 **Requirements**：不能访问 shutdown 后的旧对象，不能通过修改分配器、重置底层计数或删除断言掩盖错误。测试应能在 First-Fit、Best-Fit 和 Buddy 后端下复用，按各后端公开契约使用页面。
-````
-
-## 八、QEMU 页表与 TLB 调试
-
-负责人：2412439-崔迪。
-
-````text
-[PROMPT]
-**任务**：完善 code/tools/debug_mmu.py，通过宿主机 GDB 跟踪 QEMU 4.1.1 的真实访存翻译，并用 guest GDB 核对对应内核指令；将方法、调用链和实测结果记录到 report/report.md 的调试章节。
-**操作要求**：必须操作实际工具和报告文件，不修改内核入口、DTB 代码、页表常量、Makefile、课程测试或 QEMU 源码。验证内核只在临时副本中生成，仓库默认 Best-Fit 配置保持不变。
-**输出要求**：保存可追溯的断点、单步、调用栈和数值结果，说明 TLB 查询位置、页表关键分支、异常信息及其影响；环境不满足时明确说明，不填入预设的成功结果。
-
-[RELY]
-已有 tools/lab2_verify.py 提供 prepare_tree(source, destination, backend, slub_check=True)，可生成独立验证副本。debug_mmu.py 使用 Python argparse、pathlib、subprocess 和 tempfile，现有命令行参数为 --qemu-source、--gdb、--port。
-目标为 QEMU 4.1.1 的带符号原生构建，相关源码位置：
-- target/riscv/cpu_helper.c：get_physical_address、riscv_cpu_tlb_fill。
-- accel/tcg/cputlb.c：load_helper、tlb_set_page_with_attrs。
-- include/exec/cpu_ldst.h：tlb_index、tlb_entry。
-课程内核使用 Sv39，镜像加载在 0x80200000。128 MiB virt 配置下可跟踪 DTB 所在页的真实加载；目标地址和断点必须依据本次源码、符号及寄存器确认，host 指针不能视为固定值。
-
-[GUARANTEE]
-必须保持并完善现有 Python 接口：
-```python
-def line_containing(path, needle): ...
-def run(command, cwd): ...
-def main(): ...
-```
-交付可运行的调试工具及主报告中的调用路径、翻译示例、TLB 对比和排查记录。允许新增文件内部辅助函数及 GDB 命令文本，不新增内核接口。
-
-[SPECIFICATION]
-## line_containing
-**Pre-Condition**：path 指向目标版本源码，needle 为期望定位的源码锚点。
-**Post-Condition**：仅在匹配唯一时返回包含文件路径和行号的位置，避免对错误版本或歧义源码设置断点。
-**Case 1**：唯一匹配时返回正确位置。
-**Case 2**：缺失或存在多个匹配时明确报错，不任意选取行号继续验证。
-
-## run
-**Pre-Condition**：命令参数和工作目录有效，命令执行受时间边界约束。
-**Post-Condition**：保留并显示标准输出与错误信息，成功返回输出文本；非零退出或超时应向上报告失败，不能丢失诊断。
-
-## main
-**Pre-Condition**：具备 RISC-V 工具链、支持目标架构的 GDB，以及 QEMU 4.1.1 源码和未剥离构建；调试端口可用。
-**Post-Condition**：完成真实访存的 TLB 未命中、PTE 解析、物理地址生成和 TLB 填充核对，guest 指令数据与 host 观察一致；记录全部必要证据并清理临时文件和子进程。
-**Case 1**：Sv39 数据读取时，确认访问类型、SATP、根页表地址、实际访问的 PTE、叶子权限、翻译结果和填充后的标签。遇上层大页叶子时允许提前结束遍历，不能强制假设读满三层。
-**Case 2**：裸地址模式下跟踪真实访存，对比 VA/PA 关系及软件 TLB 是否仍被填充，解释 QEMU 软件缓存与真实 CPU TLB 的逻辑区别。
-**Case 3**：通过独立 guest 调试运行核对访存指令、寄存器与加载数据，避免将调试器读内存触发的查询混作 guest CPU 访存。
-**Case 4**：缺少符号、断点未命中、翻译或数据不符时明确失败；ASLR 权限告警与优化变量信息需结合后续检查判断，不能仅凭告警判定内核错误。
-**Requirements**：对 SATP 等寄存器按正确位宽解释；host 与 guest 地址层次分开记录；只在真实断点和数据检查成功后输出成功标记，不硬编码预期地址来替代观察。
-````
-
-## 九、Challenge：未知硬件的内存范围获取方案
-
-负责人：2412439-崔迪。此项为选做分析。
-
-````text
-[PROMPT]
-**任务**：在 report/report.md 的 Challenge 章节说明操作系统如何在未知硬件上取得可用物理内存范围，并联系本实验 DTB 的产生、传递和解析过程。
-**操作要求**：实际更新报告对应章节，依据已有代码分析，不修改 DTB 解析、启动参数或内存初始化框架，不将设计建议描述为已经实现的功能。
-**输出要求**：交代内存描述的提供者、启动传递过程、内核使用方式和必要的范围排除，区分当前实现与完整平台需求。
-
-[RELY]
-QEMU 4.1.1 的 hw/riscv/virt.c:create_fdt() 生成 memory 节点；本工程入口保存 DTB 地址，code/kern/driver/dtb.c 进行解析，dtb.h 已提供：
-```c
-void dtb_init(void);
-uint64_t get_memory_base(void);
-uint64_t get_memory_size(void);
-```
-page_init() 消费解析后的单段 RAM 信息，并受 PHYSICAL_MEMORY_END 及内核、描述符占用限制。这些函数均为已有接口，本任务只分析其关系。
-
-[GUARANTEE]
-完成报告中的内存范围获取方案，覆盖硬件描述来源、启动参数传递、RAM 与保留区区分，以及多段 RAM 的扩展需求。此任务不新增或修改 C 接口，不生成替代实现。
-
-[SPECIFICATION]
-## 内存范围获取方案
-**Pre-Condition**：内核无法事先写死全部 RAM 容量，启动环境能够提供硬件内存描述。
-**Post-Condition**：方案说明如何从可信启动信息取得范围，并指出登记空闲页前必须排除固件、内核、描述符和设备等占用；不将硬件描述容量直接当作可分配容量。
-**Case 1**：单段 DTB RAM 描述有效时，联系现有 getter 和 page_init() 解释当前实验的数据流。
-**Case 2**：描述缺失或非法时，说明需要明确失败或采用经过验证的平台机制，不能猜测内存上界并直接登记。
-**Case 3**：存在多段 RAM、固件保留区或内存映射设备时，说明完整实现需要额外解析和区间排除；明确这些能力未由本实验单段 getter 完整提供。
-**Requirements**：区分方案分析与已完成代码；不把探测 RAM、限定管理范围和计算空闲页混为同一概念。
 ````
