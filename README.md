@@ -1,90 +1,83 @@
-# 操作系统实验仓库：Lab 2
+# 操作系统实验仓库：Lab 3 中断与异常
 
-当前分支为 `lab2`，代码基于课程 `lab2_new`。Lab 1 的代码与报告保留在 `lab1` 分支。
+当前分支为 `lab3`，从 `lab2` 的 `0a7f27b` 创建。`code/` 以同级目录 `../lab3_new/` 的 56 个课程文件为基线，已迁入 Lab 2 的内存初始化和 Best-Fit 实现；除这两个内存文件外，其余 54 个课程文件仍与基线逐字节一致。Lab 3 的 Trap 填空尚未实现。Lab 2 的完成代码和报告保留在 `lab2` 分支。
 
-## 完成情况
+本分支现有 `report/` 仍为继承的 Lab 2 报告及附件，不能作为 Lab 3 的实验结果。后续完成实验时再整理 Lab 3 报告。
 
-初始化、Best-Fit、Buddy、SLUB、SLUB 默认接入和页表/TLB 调试已完成。2026-10-25 复验结果：课程评分 20/20，三个页分配器与四种 RAM 的 12 组 SLUB 组合检查通过，初始化边界用例 12/12。五张真实终端截图已补齐，逐张核对结果收入主报告第五章，并保留实际文本日志。
+## 依据与实验主线
 
-原有 39 个课程文件中，37 个与下载版逐字节一致；`pmm.c` 和 `best_fit_pmm.c` 补充实验任务代码及指定接入。之前为验证增加的 `Makefile` 选项已撤回，构建文件、启动流程、公共头文件、链接脚本、评分脚本和原测试函数保持原样。
+本地指导书位于 `../lab2026/_book/lab3/`，重点阅读：
 
-## 目录与分工
+- [练习与实现边界](../lab2026/_book/lab3/lab3_2_1_exercise.html)
+- [项目组成和执行流](../lab2026/_book/lab3/lab3_2_2_files.html)
+- [Trap 入口与上下文](../lab2026/_book/lab3/lab3_3_2_trapentry.html)
+- [时钟中断](../lab2026/_book/lab3/lab3_3_4_clock.html)
+- [报告与提交要求](../lab2026/_book/lab3/lab3_4_lab_requirement.html)
 
-```text
-code/                         课程源码、实验功能与独立验证工具
-report/report.md              正式实验报告，含分工、实现分析与测试
-report/prompt.md              按 Lab 0.5 四段式编写的任务提示词
-report/logs/                  当前测试、初始化与 MMU 调试日志
-report/images/                五张真实终端截图及核对索引
-```
+这些指导书链接依赖当前本地目录布局，不属于仓库内文件。实际接口和测试以 `code/` 的课程框架为准。
 
-| 成员 | 实际任务 |
-|------|----------|
-| 2412439-崔迪 | 初始化、公共检查接入、页表/TLB 调试、框架审计与报告汇总 |
-| 2412819-李子谦 | First-Fit 分析、Best-Fit、Buddy 与独立页级测试 |
-| 2412852-梁靖泽 | SLUB 对象分配、自编测试与对象分配总结 |
+实验目标是形成完整闭环：设置 `stvec` 与时钟 → 发生 Trap → `SAVE_ALL` 保存现场 → `__alltraps` 调用 C 函数 `trap(tf)` → 分发中断或异常 → `RESTORE_ALL` 恢复现场 → `sret` 返回原执行流。本实验主要验证内核 S 态中的断点、非法指令和时钟处理；不能把 `sret` 一律理解为返回 U 态，应按保存的 `SPP` 返回。
 
-后续修改继续遵守实验指定位置和新增功能文件的边界；不为切换测试后端改动课程框架。
+## 待办（按依赖顺序）
 
-## 构建、运行和评分
+- [x] 从 Lab 2 创建并切换到 `lab3` 分支。
+- [x] 将 `code/` 替换为 `lab3_new` 原始代码，移除 Lab 2 特有源码、测试工具与旧构建产物；保留本地 `code/dev`、`code/environment/`。
+- [x] 阅读 Lab 3 指导书、源码填空位置和课程评分脚本，整理任务与差异。
 
-在安装课程 RISC-V 工具链、QEMU 4.1.1 和 GDB 的 Linux/WSL 环境中：
+### 1. 补齐 Lab 2 前置依赖
 
-```bash
-cd code
-make clean
-make
-make qemu
-# 显示自检通过后，Ctrl+A 再 X 退出 QEMU：
-make grade
-```
+- [x] 从 `lab2` 分支迁入 `kern/mm/pmm.c` 的 `page_init()`，保留 `2412439` 署名及 Lab 3 的 `local_intr_save/restore` 包装和调用流程。Lab 3 不再定义 Lab 2 的物理边界宏，因此在填空区域内用 `KERNTOP/KERNBASE - PHYSICAL_MEMORY_OFFSET` 计算相应物理边界。
+- [x] 从 `lab2` 分支迁入 `kern/mm/best_fit_pmm.c` 的分配器实现及管理器定义，保留 `2412819` 署名；课程原有 `basic_check()`、`best_fit_check()` 逐字节不变。管理器直接调用 `best_fit_check()`，不再依赖 Lab 2 的 SLUB 组合自检。
+- [x] 核对并保留 Lab 3 框架默认的 `default_pmm_manager`（First-Fit）。Best-Fit 实现及其管理器已迁入，但未切换为默认分配器。
 
-默认选择 Best-Fit。学生检查回调先运行课程原 Best-Fit 测试，再运行 `slub_check()`；无需改 `init.c`。原 `Makefile` 没有 `PMM` 切换接口，旧分支记录中的 `make PMM=...` 不再是当前复现命令。
+### 2. 功能模块一：Trap 上下文恢复与入口
 
-## 独立验证
+- [ ] 为本模块编写 spec 和提示词，明确输入、栈布局、调用约定、恢复顺序及不可修改的接口。
+- [ ] 在 `kern/trap/trapentry.S` 的第一个 `lab3 function1` 标记处实现 `RESTORE_ALL`，与 `SAVE_ALL` 的 36 个寄存器槽位对应；恢复通用寄存器、`sstatus`、`sepc`，最后恢复原 `sp`。
+- [ ] 在第二个 `lab3 function1` 标记处补全 `__alltraps`：按 RISC-V 调用约定将当前 Trap frame 地址传给 `trap(struct trapframe *tf)`，返回时保证栈指针仍指向当前 Trap frame，随后经 `__trapret` 和 `sret` 返回。
+- [ ] 保持 `SAVE_ALL`、`struct trapframe`、`trap()` 签名及四字节对齐约束不变。
 
-以下新工具只在临时副本中切换管理器和接入额外检查，完成后清理副本：
+### 3. 功能模块二：中断与异常处理
 
-```bash
-cd code
-python3 tools/lab2_verify.py --ram 64 70 128 256
-python3 tools/lab2_verify.py --backend buddy --ram 128
-bash tools/verify_init.sh
-python3 tools/debug_mmu.py --qemu-source /tmp/qemu
-```
+- [ ] 为本模块编写 spec 和提示词，列出中断分类、输出格式、EPC 更新规则、计数与关机条件。
+- [ ] 在 `kern/trap/trap.c` 的 `lab3 function2` 区域实现 `interrupt_handler()`：识别中断原因；S 态时钟中断每次调用 `clock_set_next_event()`，并将 `ticks` 加一，每满 `TICK_NUM=100` 次调用现有 `print_ticks()`。
+- [ ] 处理其他中断分类并输出相应提示；未知中断输出原因并调用 `print_trapframe(tf)`。课程测试要求能看到 `Supervisor software interrupt`、`Unknown interrupt: cause 15`。
+- [ ] 实现 `exception_handler()`：非法指令输出含 `Illegal instruction at` 的信息，断点输出含 `Breakpoint at` 的信息；按指令实际长度更新 `tf->epc`，保证返回后继续执行。不能把所有异常统一加 4；需兼顾压缩断点和普通断点。其他异常调用 `print_trapframe(tf)` 兜底。
+- [ ] 核实并补上指导书要求的 `SHUTDOWN_AFTER` 关机策略。原文在指导书 `lab3_2_1_exercise.html` 第 2160 行的“功能模块二”注意事项中：“累计输出达到 `SHUTDOWN_AFTER` 后需要调用框架提供的关机接口。”第 2162 行也将其列为依赖宏。当前骨架没有定义这个宏，指导书也未给出具体阈值；实现前需要确认阈值，在允许的填空区域补齐必要定义/声明，并通过框架的 `sbi_shutdown()` 关机。
+- [ ] 保留 `trap.c` 其他既有函数和评分框架，时钟中断返回时保持被打断位置的 EPC。
 
-最后一个命令需要 QEMU 4.1.1 源码及未剥离的构建文件。本机容器已保留 `/tmp/qemu`；新环境准备见 [下方源码调试环境](#qemu-源码调试环境)。初始化宿主机用例也可在 macOS 上执行 `python3 code/tools/check_page_init.py`，需要本机 C 编译器。
+### 4. 验证与留存证据
 
-本机原有容器名为 `os-labs-lab-1`，名称与当前实验无关。它挂载当前 `code/`，可使用 `docker exec os-labs-lab-1 ...` 执行以上命令。原本地 `code/dev`、`code/environment/` 保持不变且未纳入 Git；其中旧验证流程面向 Lab 1，不作为 Lab 2 的复验入口。
+- [ ] 准备 RISC-V 工具链及课程 QEMU 环境，执行 `make clean && make`，确认初始化与新增代码编译通过。
+- [ ] 执行 `make qemu`，确认内存检查完成、时钟持续触发并重复输出 `100 ticks`，另外验证规定次数后的自动关机。
+- [ ] 执行 `make grade`，目标为三项全部通过、`Total Score: 100/100`：
 
-### QEMU 源码调试环境
+  | 课程评分项 | 分值 | 主要检查 |
+  | --- | ---: | --- |
+  | Trap 入口、寄存器恢复及断点 EPC | 35 | 断点返回后寄存器现场可用 |
+  | 非法指令 EPC 及兜底处理 | 25 | 跳过 4 字节非法指令，软件/未知中断和未知异常输出 |
+  | 持续 S 态时钟中断 | 40 | 重设定时器、`100 ticks`、累计到 `ticks=200` |
 
-源码调试需要 QEMU 4.1.1 源码及带调试符号、未剥离的构建文件。本次使用容器 `/tmp/qemu` 下已有构建；以下命令供新 Linux/WSL 环境准备相同版本使用，不替换系统安装的 QEMU。
+- [ ] 补充评分未覆盖的必要检查：16/32 位断点长度、原栈与中断状态恢复、关机阈值；正常运行测试与评分结果分别记录。
+- [ ] 保存真实构建、运行、评分日志及截图，记录实际遇到的问题和修复，不把待办写成已经完成的结果。
 
-```bash
-sudo apt-get update
-sudo apt-get install -y gcc g++ make pkg-config python3 wget xz-utils bzip2 \
-  libglib2.0-dev libpixman-1-dev libfdt-dev gdb-multiarch
-wget https://download.qemu.org/qemu-4.1.1.tar.xz
-tar -xJf qemu-4.1.1.tar.xz
-cd qemu-4.1.1
-./configure --python=python3 --target-list=riscv64-softmmu \
-  --enable-debug --disable-strip --disable-werror --disable-docs \
-  --disable-tools --disable-guest-agent --disable-capstone
-make -j4
-```
+### 5. 报告与提交
 
-准备后，在仓库 `code/` 中运行 `python3 tools/debug_mmu.py --qemu-source /path/to/qemu-4.1.1`，将路径替换为实际构建目录。实验观察及结论见 [报告 GDB 部分](report/report.md#qemu-source-setup)。
+- [ ] 整理本分支 `report/`，按课程 Markdown 报告模板编写 Lab 3 报告，核实成员与分工。
+- [ ] 说明整体实现顺序、核心函数、Trap frame 布局与上下文保存/恢复的关系。
+- [ ] 记录两个模块的 spec、最终 prompt、真实迭代过程、bug 与修复，并整理相应 `report/prompt.md`。
+- [ ] 总结实验知识点与 OS 原理的联系和差异，以及本实验未覆盖的重要原理知识点。
+- [ ] 保留课程 `lab3` 注释，将 `YOUR CODE` 替换为实际负责人的学号；核对 Lab 2 继承部分的署名。
+- [ ] 完成代码审查、报告与附件核对，提交并推送 `lab3` 分支。
 
-## 交付证据
+## 框架差异与环境状态
 
-- [当前版本构建、12 组组合检查与课程评分 20/20](report/logs/2412819-tests.txt)
-- [初始化与页表状态](report/logs/20261025-initialization.txt)
-- [QEMU 源码与 RISC-V 指令调试](report/logs/20261025-mmu.txt)
-- [真实截图与核对结果](report/images/README.md)
+指导书练习开头提到填写“lab2”位置，但实际 Lab 3 编程任务是 `trapentry.S` 的两个 `lab3 function1` 标记和 `trap.c` 的一个 `lab3 function2` 标记；另有两个 `lab2` 标记用于迁入前置内存代码。指导书示例目录和注释存在旧版本内容，应结合当前源码核对，Challenge 不计入上述必做清单。
 
-报告统一引用 2026-10-25 的复验日志，环境来源和测试覆盖范围在主报告中说明。
+评分入口是 `make grade`：在 `/tmp/lab3_grade` 临时副本中注入测试，再执行 `tools/grade.sh`，不应直接向正式源码手工注入测试。评分脚本未检查自动关机，100/100 仍需配合正常运行检查才能覆盖指导书要求。
 
-## 报告与提交
+已完成基线切换、任务梳理及 Lab 2 前置实现迁入。迁移后在临时宿主机测试中，`page_init()` 的 12 个边界用例通过；Best-Fit 使用真实链表实现及迁入的分配器，通过原有 `basic_check()`、`best_fit_check()`，256 页全部回收。测试对物理地址和原子位操作使用宿主机替代，不验证 RISC-V 指令或时钟行为。
 
-实验内容统一记录在 `report/report.md`，规范化提示词保存在 `report/prompt.md`，相关日志和截图分别存放在 `report/logs/`、`report/images/`。三份个人记录已整合到主报告后删除。提交时包含代码、报告及引用附件；课程测试和框架文件保持原样。
+尚未完成 RISC-V 构建或课程评分。Lab 3 的两个 handler 和上下文恢复仍留空；本机 C 编译器不支持课程 RISC-V 内联汇编约束，不能用于完整源码编译。检查时 Docker 服务未启动，本地 `riscv64-unknown-elf-gcc` 也不在 PATH 中。
+
+本地 `code/dev` 和 `code/environment/` 继续由 `.git/info/exclude` 忽略；其中旧 `verify` 流程面向 Lab 1，不是 Lab 3 的验收入口。切换前的代码、构建产物及 README 另行备份于同级 `.os-labs-lab3-backup-20261028-225324/`。

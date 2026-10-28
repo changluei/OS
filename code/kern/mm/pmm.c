@@ -8,6 +8,7 @@
 #include <sbi.h>
 #include <stdio.h>
 #include <string.h>
+#include <../sync/sync.h>
 #include <riscv.h>
 #include <dtb.h>
 
@@ -34,7 +35,7 @@ static void check_alloc_page(void);
 
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void) {
-    pmm_manager = &best_fit_pmm_manager;  // 按实验要求启用 Best-Fit，后续通过统一接口分配页面。
+    pmm_manager = &default_pmm_manager;
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -47,24 +48,46 @@ static void init_memmap(struct Page *base, size_t n) {
 // alloc_pages - call pmm->alloc_pages to allocate a continuous n*PAGESIZE
 // memory
 struct Page *alloc_pages(size_t n) {
-    return pmm_manager->alloc_pages(n);
+    struct Page *page = NULL;
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        page = pmm_manager->alloc_pages(n);
+    }
+    local_intr_restore(intr_flag);
+    return page;
 }
 
 // free_pages - call pmm->free_pages to free a continuous n*PAGESIZE memory
 void free_pages(struct Page *base, size_t n) {
-    pmm_manager->free_pages(base, n);
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        pmm_manager->free_pages(base, n);
+    }
+    local_intr_restore(intr_flag);
 }
 
 // nr_free_pages - call pmm->nr_free_pages to get the size (nr*PAGESIZE)
 // of current free memory
 size_t nr_free_pages(void) {
-    return pmm_manager->nr_free_pages();
+    size_t ret;
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        ret = pmm_manager->nr_free_pages();
+    }
+    local_intr_restore(intr_flag);
+    return ret;
 }
 
 //lab2 function1 2412439
 /* 建立物理页描述符，排除已有占用，再把完整的空闲页面交给分配器。 */
 static void page_init(void) {
     extern char end[];
+    // Lab 3 uses virtual mapping bounds instead of the Lab 2 physical bound macros.
+    const uintptr_t physical_memory_end = KERNTOP - PHYSICAL_MEMORY_OFFSET;
+    const uintptr_t kernel_begin_paddr = KERNBASE - PHYSICAL_MEMORY_OFFSET;
     // DTB 解析已由框架完成；这里只读取其报告的 RAM 起点和长度。
     uint64_t memory_base = get_memory_base();
     uint64_t memory_size = get_memory_size();
@@ -77,14 +100,14 @@ static void page_init(void) {
 
     // RAM 按左闭右开区间处理；管理末端受框架上限约束，并舍去不足一页的尾部。
     uint64_t memory_end = memory_base + memory_size;
-    uintptr_t managed_end = memory_end < PHYSICAL_MEMORY_END
-                                ? memory_end : PHYSICAL_MEMORY_END;
+    uintptr_t managed_end = memory_end < physical_memory_end
+                                ? memory_end : physical_memory_end;
     managed_end = ROUNDDOWN(managed_end, PGSIZE);
     va_pa_offset = PHYSICAL_MEMORY_OFFSET;  // 内核虚拟地址减去该偏移后得到物理地址。
 
     // end 是虚拟地址，须先转为物理地址，才能判断 RAM 是否覆盖已加载的内核。
     uintptr_t kernel_end = PADDR((uintptr_t)end);
-    if (memory_base > KERNEL_BEGIN_PADDR ||
+    if (memory_base > kernel_begin_paddr ||
         managed_end <= kernel_end || managed_end <= DRAM_BASE) {
         panic("physical memory does not contain the kernel");
     }
