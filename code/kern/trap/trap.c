@@ -82,6 +82,28 @@ void print_regs(struct pushregs *gpr) {
 
 //lab3 function2 YOUR CODE
 
+// lab3 2412852
+static uintptr_t exception_instruction_length(uintptr_t epc) {
+    uint16_t instruction = *(const volatile uint16_t *)epc;
+    return (instruction & 0x3) == 0x3 ? 4 : 2;
+}
+
+void exception_handler(struct trapframe *tf) {
+    switch (tf->cause) {
+    case CAUSE_ILLEGAL_INSTRUCTION:
+        cprintf("Illegal instruction at 0x%016lx\n", tf->epc);
+        tf->epc += exception_instruction_length(tf->epc);
+        break;
+    case CAUSE_BREAKPOINT:
+        cprintf("Breakpoint at 0x%016lx\n", tf->epc);
+        tf->epc += exception_instruction_length(tf->epc);
+        break;
+    default:
+        print_trapframe(tf);
+        break;
+    }
+}
+
 
 static inline void trap_dispatch(struct trapframe *tf) {
     if ((intptr_t)tf->cause < 0) {
