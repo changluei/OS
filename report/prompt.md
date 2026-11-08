@@ -2,6 +2,65 @@
 
 本文按成员保存提示词。梁靖泽部分分为异常实现、异常测试、模块一说明整理、`stvec` 思考题和报告整合；编程任务与文档任务分别处理，不把资料整理算成重新实现。以下是依据实验手册和当前代码整理的最终版本，不是逐字还原的历史对话。
 
+## 2412439—崔迪
+
+### Trap 上下文恢复与入口
+
+以下提示词于 2026-11-08 按 Lab 0.5 四段式规范整理，依据本次模块一的实际需求、代码和修改边界编写，供报告与复现使用；不作为历史对话的逐字转录。
+
+````text
+[PROMPT]
+任务：我负责 Lab 3 功能模块一。请补全 code/kern/trap/trapentry.S 中的 RESTORE_ALL 和 __alltraps，使内核能够将保存的 Trap 现场交给 C 函数处理，并恢复现场、返回被打断的 S 态执行流。
+操作要求：必须直接修改工程中的实际文件，只补充两处 lab3 function1 YOUR CODE。保留 lab3 function1 注释，将 YOUR CODE 替换为我的学号 2412439。SAVE_ALL、__trapret、sret、入口对齐、trapframe 定义、头文件、Makefile、trap.c 和课程测试均保持原样，不实现已经取消的用户态切换 Challenge。
+输出要求：依据下面的真实布局、接口与行为规格实现，说明实际修改位置、栈与返回状态的一致性，以及已执行的验证。模块二尚未实现时，可以在临时副本中使用测试替身验证模块一，但不能把替身写回正式源码，也不能据此声称完整课程评分通过。
+
+[RELY]
+code/libs/riscv.h 已定义 LOAD、STORE、REGBYTES。RV64 下 LOAD 为 ld、STORE 为 sd、REGBYTES 为 8。
+code/kern/trap/trap.h 中的相关接口为：
+```c
+struct trapframe {
+    struct pushregs gpr;
+    uintptr_t status;
+    uintptr_t epc;
+    uintptr_t badvaddr;
+    uintptr_t cause;
+};
+void trap(struct trapframe *tf);
+```
+struct pushregs 的成员按 x0 到 x31 顺序排列，RV64 下每项 uintptr_t 占 8 字节。Trap frame 共 36 个槽、288 字节，偏移以 REGBYTES 为单位：第 0～31 槽对应 x0～x31，第 32～35 槽分别为 sstatus、sepc、badvaddr 和 scause。
+现有 SAVE_ALL 已在当前内核栈分配 frame，并保存上述现场。当前 sp 指向 frame 基址；第 2 槽保存进入 Trap 之前的原 sp，其值来自 sscratch，不是减去 frame 大小之后的 sp。x0 恒为零。badvaddr/cause 是诊断信息，不是需要恢复的返回控制状态。
+RISC-V 调用约定以 a0 传递第一个参数，函数调用会改变返回地址和部分通用寄存器。框架已经提供 __trapret：执行 RESTORE_ALL 后执行 sret。处理函数可通过 tf->epc 调整返回地址；sret 根据恢复的 sepc 和 sstatus 完成返回，不能认为它必然返回 U 态。
+
+[GUARANTEE]
+必须完成的汇编接口：
+```asm
+.macro RESTORE_ALL
+    #lab3 function1 2412439
+.endm
+
+__alltraps:
+    SAVE_ALL
+    #lab3 function1 2412439
+```
+RESTORE_ALL 是无参数汇编宏，__alltraps 是框架已有的汇编入口标签，不将它们改写为新的 C 函数。二者共同对接已有 void trap(struct trapframe *tf) 和 __trapret，不新增公开接口或改动其他模块。
+
+[SPECIFICATION]
+## RESTORE_ALL
+Pre-Condition：当前处于 S 态 Trap 返回路径，sp 指向有效、符合 SAVE_ALL 布局的 frame；C 处理函数已经返回且保持 frame 基址可用。frame 中的返回状态有效，恢复过程不得提前开启中断；本任务只处理当前纯内核的上下文。
+Post-Condition：可写通用寄存器及返回 CSR 与 frame 记录一致，sp 恢复为第 2 槽保存的原值；后续已有 sret 能从 frame 指定的位置继续执行，且不破坏 frame 之外的内存。
+Case 1：C 处理函数未修改现场时，被打断执行流的通用寄存器和原栈得到恢复；x0 保持硬件规定的零值。
+Case 2：C 处理函数合法修改 tf->epc 时，返回使用修改后的地址，而不是入口时保存地址的另一份副本。
+Case 3：中断发生前允许或屏蔽中断时，保留 frame 中的 SPP/SPIE 等返回状态，由 sret 按处理器规则完成返回；不得无条件开启中断或强制改为用户态。
+Requirements：必须与 SAVE_ALL 的槽位一一对应。恢复所需的 frame 访问完成前，不能丢失其基址；原 sp 的处理必须与其他 GPR 区分。不得把 badvaddr/cause 当作需要回写的返回 CSR，也不得改动 SAVE_ALL 来迁就恢复代码。
+
+## __alltraps
+Pre-Condition：stvec 已指向四字节对齐的 __alltraps，处理器已进入 S 态且当前内核栈有效。入口已有 SAVE_ALL 会建立完整 frame，原栈满足 C 调用的 16 字节对齐要求。
+Post-Condition：trap() 恰好接收本次 frame 的地址；C 返回后 sp 仍指向同一 frame，执行流能够进入已有 __trapret，恢复处理后的现场并经 sret 返回。
+Case 1：处理中断时，C 函数可读取本次保存的原因和寄存器，返回路径保留 handler 决定的现场。
+Case 2：处理断点或非法指令等异常时，C 对 frame 中返回位置的合法更新能交给统一恢复流程，不另建独立的异常返回机制。
+Requirements：遵守 RISC-V 参数和函数调用约定，不因调用 trap() 丢失 frame 基址或原执行流的返回地址；288 字节 frame 在原栈对齐时保持 16 字节对齐。本模块不增加中断/异常分类逻辑，填空之外的所有代码保持逐字节一致。
+````
+
 ## 2412819—李子谦
 
 ### 中断分类、时钟与关机
@@ -84,6 +143,8 @@ Requirements：通过保存的 frame 交回返回状态，不在 C 函数里另�
 ````
 
 ### 二、异常返回与寄存器、原栈的联合测试
+
+本节保留已执行的历史补充测试提示词。该自编脚本不是课程要求，现已移除，不作为当前提交内容或复现入口。
 
 ````text
 [PROMPT]

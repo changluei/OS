@@ -6,7 +6,6 @@
 #include <memlayout.h>
 #include <mmu.h>
 #include <riscv.h>
-#include <sbi.h>
 #include <stdio.h>
 #include <trap.h>
 
@@ -84,6 +83,8 @@ void print_regs(struct pushregs *gpr) {
 //lab3 function2
 
 // lab3 2412819
+#include <sbi.h>
+
 #ifndef SHUTDOWN_AFTER
 /* Provisional shutdown threshold: number of print_ticks() outputs, not ticks. */
 #define SHUTDOWN_AFTER 10
