@@ -30,12 +30,13 @@
 | 文件中的原始标记 | 对应任务 | 负责人 |
 |------------------|----------|--------|
 | `kern/mm/pmm.c`：`LAB4 function1 YOUR CODE` | `page_insert()`、`page_remove()` | 崔迪，2412439 |
-| `kern/process/proc.c`：`LAB4 function2 YOUR CODE` | 六个线程创建与初始化函数 | 李子谦，2412819 |
+| `kern/process/proc.c`：`LAB4 function2 YOUR CODE` | `alloc_proc()`、`proc_init()` | 崔迪，2412439 |
+| `kern/process/proc.c`：`LAB4 function2 YOUR CODE` | `kernel_thread()`、`do_fork()`、`copy_thread()`、`copy_mm()` | 李子谦，2412819 |
 | `kern/process/proc.c`：`LAB4 function3 YOUR CODE` | `cpu_idle()`、`proc_run()` | 梁靖泽，2412852 |
 | `kern/schedule/sched.c`：`LAB4 function3 YOUR CODE` | `schedule()` | 梁靖泽，2412852 |
 | `kern/process/switch.S`：`LAB4 function3 YOUR CODE` | `switch_to()` | 梁靖泽，2412852 |
 
-以上五处原始标记均保留。`proc_struct`、`context`、VMA、`kmalloc`、`kernel_thread_entry` 和课程评分工具使用压缩包版本。旧 `lsatp()` 的 Sv32 问题仍需由模块三按指导书要求处理。
+以上负责人已按当前分工更新，每人四个必做函数。框架的五处原始标记均保留，其中 `LAB4 function2` 区域由崔迪和李子谦按函数划分。两项 Challenge 均为文字思考题，暂不指定负责人，不计入编程工作量。`proc_struct`、`context`、VMA、`kmalloc`、`kernel_thread_entry` 和课程评分工具使用压缩包版本。旧 `lsatp()` 的 Sv32 问题仍需由模块三按指导书要求处理。
 
 ## 检查结果
 
