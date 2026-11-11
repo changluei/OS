@@ -267,7 +267,92 @@ void proc_init(void)
     set_proc_name(initproc, "init");
 }
 
-//LAB4 function2 YOUR CODE
+//LAB4 function2 2412819
+int
+kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
+{
+    struct trapframe tf;
+    memset(&tf, 0, sizeof(tf));
+    tf.gpr.s0 = (uintptr_t)fn;
+    tf.gpr.s1 = (uintptr_t)arg;
+    tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
+    tf.epc = (uintptr_t)kernel_thread_entry;
+    return do_fork(clone_flags | CLONE_VM, 0, &tf);
+}
+
+//LAB4 function2 2412819
+static void
+copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
+{
+    uintptr_t tf_addr = (proc->kstack + KSTACKSIZE - sizeof(struct trapframe)) &
+                        ~(uintptr_t)0xF;
+    proc->tf = (struct trapframe *)tf_addr;
+    *proc->tf = *tf;
+    proc->tf->gpr.a0 = 0;
+    proc->tf->gpr.sp = esp == 0 ? tf_addr : esp;
+
+    memset(&proc->context, 0, sizeof(proc->context));
+    proc->context.ra = (uintptr_t)forkret;
+    proc->context.sp = tf_addr;
+}
+
+//LAB4 function2 2412819
+static int
+copy_mm(uint32_t clone_flags, struct proc_struct *proc)
+{
+    (void)clone_flags;
+    if (current->mm != NULL)
+    {
+        return -E_INVAL;
+    }
+    proc->mm = NULL;
+    proc->pgdir = boot_pgdir_pa;
+    return 0;
+}
+
+//LAB4 function2 2412819
+int
+do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
+{
+    if (nr_process >= MAX_PROCESS)
+    {
+        return -E_NO_FREE_PROC;
+    }
+
+    int ret = -E_NO_MEM;
+    struct proc_struct *proc = alloc_proc();
+    if (proc == NULL)
+    {
+        return ret;
+    }
+    proc->parent = current;
+
+    if ((ret = setup_kstack(proc)) != 0)
+    {
+        goto bad_fork_cleanup_proc;
+    }
+    if ((ret = copy_mm(clone_flags, proc)) != 0)
+    {
+        goto bad_fork_cleanup_kstack;
+    }
+    copy_thread(proc, stack, tf);
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    proc->pid = get_pid();
+    list_add(&proc_list, &proc->list_link);
+    hash_proc(proc);
+    nr_process++;
+    wakeup_proc(proc);
+    local_intr_restore(intr_flag);
+    return proc->pid;
+
+bad_fork_cleanup_kstack:
+    put_kstack(proc);
+bad_fork_cleanup_proc:
+    kfree(proc);
+    return ret;
+}
 
 
 //LAB4 function3 YOUR CODE

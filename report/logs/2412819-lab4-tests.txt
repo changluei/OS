@@ -1,0 +1,542 @@
+Lab4：2412819—李子谦 线程创建专项验证
+日期：2026-11-12（Asia/Shanghai）
+环境：WSL2 / Ubuntu 24.04.4 LTS / x86_64；SiFive GCC-Metal 10.2.0-2020.12.8；QEMU 4.1.1。
+被测正式文件：code/kern/process/proc.c
+SHA-256：b3d6139f3b15b7582ceb114fa3d4cabbf24991f491fa0384d49b72e4b4792f7d
+范围：kernel_thread、copy_thread、copy_mm、do_fork；队友函数及其他源码、Makefile、课程工具未修改。
+临时目录：/tmp/lab4-2412819-test-F7pNMp（测试后删除）。不保留独立的测试脚本，以下同时保存临时夹具源码，便于复核。
+
+证据边界：正式内核尚缺 cpu_idle，未通过完整链接，也未执行 Lab4 课程评分。下面 QEMU 结果来自临时副本：仅补测试入口、链接包装和断言，不实现 schedule/proc_run/switch_to。最后直接设置诊断线程并调用 forkret，验证现有 forkrets/__trapret/sret/kernel_thread_entry 和实际创建现场，不声称已验证调度器上下文切换。
+分配失败由 --wrap=kmalloc/alloc_pages 注入；真正的内存分配与回收仍调用原函数。资源比较覆盖空闲页数、PCB/栈释放次数、进程总数及链表/哈希节点数。
+
+一、正式代码构建
+工作目录：/home/qian/code/OS/code
+命令：make -j2 OBJDIR=/tmp/lab4-2412819-test-F7pNMp/formal-obj BINDIR=/tmp/lab4-2412819-test-F7pNMp/formal-bin LDFLAGS='-m elf64lriscv -nostdlib --gc-sections'
+退出码：2
+实际输出末段（各源码已编译，链接在队友入口处失败）：
++ cc kern/process/switch.S
++ cc kern/schedule/sched.c
++ cc libs/hash.c
++ cc libs/printfmt.c
++ cc libs/string.c
++ ld /tmp/lab4-2412819-test-F7pNMp/formal-bin/kernel
+riscv64-unknown-elf-ld: /tmp/lab4-2412819-test-F7pNMp/formal-obj/kern/init/init.o: in function `kern_init':
+/home/qian/code/OS/code/kern/init/init.c:35: undefined reference to `cpu_idle'
+make: *** [Makefile:130: /tmp/lab4-2412819-test-F7pNMp/formal-bin/kernel] Error 1
+
+二、临时副本接入与交叉编译
+复制 code/（排除 obj、bin、__pycache__），在副本 kern/process/proc.c 的 function3 占位后仅追加：
+#include "2412819_test.h"
+把本记录第五节的代码保存为副本 kern/process/2412819_test.h。正式工作区不含该接入。
+工作目录：/tmp/lab4-2412819-test-F7pNMp
+命令：make -B -j2 LDFLAGS='-m elf64lriscv -nostdlib --gc-sections --wrap=kmalloc --wrap=kfree --wrap=alloc_pages --wrap=free_pages'
+退出码：0
++ cc kern/init/init.c
++ cc kern/init/entry.S
++ cc kern/libs/readline.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/driver/picirq.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/default_pmm.c
++ cc kern/mm/kmalloc.c
+kern/mm/kmalloc.c: In function '__slob_free_pages':
+kern/mm/kmalloc.c:92:22: warning: passing argument 1 of 'kva2page' makes pointer from integer without a cast [-Wint-conversion]
+   92 |  free_pages(kva2page(kva), 1 << order);
+      |                      ^~~
+      |                      |
+      |                      long unsigned int
+In file included from kern/mm/kmalloc.c:7:
+kern/mm/pmm.h:117:16: note: expected 'void *' but argument is of type 'long unsigned int'
+  117 | kva2page(void *kva)
+      |          ~~~~~~^~~
++ cc kern/mm/pmm.c
++ cc kern/mm/vmm.c
++ cc kern/process/entry.S
++ cc kern/process/proc.c
++ cc kern/process/switch.S
++ cc kern/schedule/sched.c
++ cc libs/hash.c
++ cc libs/printfmt.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+
+框架自带 kmalloc.c 的整数/指针转换警告如实保留，未为消除警告扩大正式修改范围。
+
+三、实际 QEMU 输出
+
+RAM=64M
+命令：qemu-system-riscv64 -machine virt -m 64M -net none -nographic -bios default -device loader,file=bin/ucore.img,addr=0x80200000
+退出码：0；超时：false；成功标记：true
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000004000000 (64 MB)
+  End:  0x0000000083ffffff
+DTB init completed
+(THU.CST) os is loading ...
+
+Special kernel symbols:
+  entry  0xc020004a (virtual)
+  etext  0xc0204c06 (virtual)
+  edata  0xc020b030 (virtual)
+  end    0xc020f510 (virtual)
+Kernel executable memory footprint: 62KB
+memory management: best_fit_pmm_manager
+physical memory map:
+  memory: 0x0000000004000000, [0x0000000080000000, 0x0000000083ffffff].
+  managed end: 0x0000000084000000, free begin: 0x0000000080310000
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+++ setup timer interrupts
+[2412819] PASS: original proc_init creates and registers initproc with the real four functions
+[2412819] PASS: copy_thread copies the full frame, clears context, isolates parent stack
+[2412819] PASS: copy_thread preserves a supplied aligned stack pointer
+[2412819] PASS: process limit rejects before resource allocation
+[2412819] PASS: PCB allocation failure returns ENOMEM without registration
+[2412819] PASS: kernel-stack allocation failure releases PCB
+[2412819] PASS: unsupported user mm cleans stack and PCB, preserves all registries
+[2412819] PASS: kernel_thread builds entry, null argument and S-mode status without running it
+[2412819] PASS: unique PIDs, parent, independent stacks, registry counts and interrupt restoration
+[2412819] PASS: diagnostic cleanup restores allocated stack pages and process registries
+[2412819] PASS: real forkret/forkrets/sret/kernel_thread_entry reaches fn(arg) on child stack
+[2412819] ALL CREATION TESTS PASSED
+
+RAM=70M
+命令：qemu-system-riscv64 -machine virt -m 70M -net none -nographic -bios default -device loader,file=bin/ucore.img,addr=0x80200000
+退出码：0；超时：false；成功标记：true
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000004600000 (70 MB)
+  End:  0x00000000845fffff
+DTB init completed
+(THU.CST) os is loading ...
+
+Special kernel symbols:
+  entry  0xc020004a (virtual)
+  etext  0xc0204c06 (virtual)
+  edata  0xc020b030 (virtual)
+  end    0xc020f510 (virtual)
+Kernel executable memory footprint: 62KB
+memory management: best_fit_pmm_manager
+physical memory map:
+  memory: 0x0000000004600000, [0x0000000080000000, 0x00000000845fffff].
+  managed end: 0x0000000084600000, free begin: 0x0000000080328000
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+++ setup timer interrupts
+[2412819] PASS: original proc_init creates and registers initproc with the real four functions
+[2412819] PASS: copy_thread copies the full frame, clears context, isolates parent stack
+[2412819] PASS: copy_thread preserves a supplied aligned stack pointer
+[2412819] PASS: process limit rejects before resource allocation
+[2412819] PASS: PCB allocation failure returns ENOMEM without registration
+[2412819] PASS: kernel-stack allocation failure releases PCB
+[2412819] PASS: unsupported user mm cleans stack and PCB, preserves all registries
+[2412819] PASS: kernel_thread builds entry, null argument and S-mode status without running it
+[2412819] PASS: unique PIDs, parent, independent stacks, registry counts and interrupt restoration
+[2412819] PASS: diagnostic cleanup restores allocated stack pages and process registries
+[2412819] PASS: real forkret/forkrets/sret/kernel_thread_entry reaches fn(arg) on child stack
+[2412819] ALL CREATION TESTS PASSED
+
+RAM=128M
+命令：qemu-system-riscv64 -machine virt -m 128M -net none -nographic -bios default -device loader,file=bin/ucore.img,addr=0x80200000
+退出码：0；超时：false；成功标记：true
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+
+Special kernel symbols:
+  entry  0xc020004a (virtual)
+  etext  0xc0204c06 (virtual)
+  edata  0xc020b030 (virtual)
+  end    0xc020f510 (virtual)
+Kernel executable memory footprint: 62KB
+memory management: best_fit_pmm_manager
+physical memory map:
+  memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
+  managed end: 0x0000000088000000, free begin: 0x0000000080410000
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+++ setup timer interrupts
+[2412819] PASS: original proc_init creates and registers initproc with the real four functions
+[2412819] PASS: copy_thread copies the full frame, clears context, isolates parent stack
+[2412819] PASS: copy_thread preserves a supplied aligned stack pointer
+[2412819] PASS: process limit rejects before resource allocation
+[2412819] PASS: PCB allocation failure returns ENOMEM without registration
+[2412819] PASS: kernel-stack allocation failure releases PCB
+[2412819] PASS: unsupported user mm cleans stack and PCB, preserves all registries
+[2412819] PASS: kernel_thread builds entry, null argument and S-mode status without running it
+[2412819] PASS: unique PIDs, parent, independent stacks, registry counts and interrupt restoration
+[2412819] PASS: diagnostic cleanup restores allocated stack pages and process registries
+[2412819] PASS: real forkret/forkrets/sret/kernel_thread_entry reaches fn(arg) on child stack
+[2412819] ALL CREATION TESTS PASSED
+
+RAM=256M
+命令：qemu-system-riscv64 -machine virt -m 256M -net none -nographic -bios default -device loader,file=bin/ucore.img,addr=0x80200000
+退出码：0；超时：false；成功标记：true
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000010000000 (256 MB)
+  End:  0x000000008fffffff
+DTB init completed
+(THU.CST) os is loading ...
+
+Special kernel symbols:
+  entry  0xc020004a (virtual)
+  etext  0xc0204c06 (virtual)
+  edata  0xc020b030 (virtual)
+  end    0xc020f510 (virtual)
+Kernel executable memory footprint: 62KB
+memory management: best_fit_pmm_manager
+physical memory map:
+  memory: 0x0000000010000000, [0x0000000080000000, 0x000000008fffffff].
+  managed end: 0x0000000088000000, free begin: 0x0000000080410000
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+++ setup timer interrupts
+[2412819] PASS: original proc_init creates and registers initproc with the real four functions
+[2412819] PASS: copy_thread copies the full frame, clears context, isolates parent stack
+[2412819] PASS: copy_thread preserves a supplied aligned stack pointer
+[2412819] PASS: process limit rejects before resource allocation
+[2412819] PASS: PCB allocation failure returns ENOMEM without registration
+[2412819] PASS: kernel-stack allocation failure releases PCB
+[2412819] PASS: unsupported user mm cleans stack and PCB, preserves all registries
+[2412819] PASS: kernel_thread builds entry, null argument and S-mode status without running it
+[2412819] PASS: unique PIDs, parent, independent stacks, registry counts and interrupt restoration
+[2412819] PASS: diagnostic cleanup restores allocated stack pages and process registries
+[2412819] PASS: real forkret/forkrets/sret/kernel_thread_entry reaches fn(arg) on child stack
+[2412819] ALL CREATION TESTS PASSED
+
+四、汇总
+四种 RAM 配置各 11 组检查均通过，均由 SBI 正常关机，未超时。
+实际覆盖：原 proc_init 创建 initproc、完整 frame 独立复制、context 清零、16 字节对齐、显式栈参数、进程数上限、PCB 失败、栈失败、非空用户 mm 拒绝及回收、入口/参数/status、唯一 PID 与登记、原中断状态恢复、测试回收与真实首次返回。
+未覆盖：完整 schedule/proc_run/switch_to 切换、用户进程复制、多核并发、全部内存耗尽序列。最终课程 make grade 待其他成员完成后再执行，未记录虚构分数。
+
+五、临时测试夹具原文（仅用于以上隔离验证）
+/* Temporary diagnostic fixture; not part of the submitted kernel. */
+#include <sbi.h>
+
+static int fail_pcb, fail_stack;
+static size_t pcb_calls, pcb_frees, stack_calls, stack_frees;
+void *__real_kmalloc(size_t n);
+void __real_kfree(void *p);
+struct Page *__real_alloc_pages(size_t n);
+void __real_free_pages(struct Page *p, size_t n);
+
+void *__wrap_kmalloc(size_t n) {
+    if (n == sizeof(struct proc_struct)) {
+        pcb_calls++;
+        if (fail_pcb) { fail_pcb = 0; return NULL; }
+    }
+    return __real_kmalloc(n);
+}
+void __wrap_kfree(void *p) {
+    pcb_frees++;
+    __real_kfree(p);
+}
+struct Page *__wrap_alloc_pages(size_t n) {
+    if (n == KSTACKPAGE) {
+        stack_calls++;
+        if (fail_stack) { fail_stack = 0; return NULL; }
+    }
+    return __real_alloc_pages(n);
+}
+void __wrap_free_pages(struct Page *p, size_t n) {
+    if (n == KSTACKPAGE) stack_frees++;
+    __real_free_pages(p, n);
+}
+
+static size_t audit_nodes(list_entry_t *head) {
+    size_t n = 0;
+    for (list_entry_t *le = list_next(head); le != head; le = list_next(le)) {
+        assert(++n <= MAX_PROCESS);
+    }
+    return n;
+}
+static size_t audit_hash_nodes(void) {
+    size_t n = 0;
+    for (size_t i = 0; i < HASH_LIST_SIZE; i++) n += audit_nodes(hash_list + i);
+    return n;
+}
+static void audit_pass(const char *name) { cprintf("[2412819] PASS: %s\n", name); }
+static void audit_release(struct proc_struct *p) {
+    list_del(&p->list_link);
+    list_del(&p->hash_link);
+    nr_process--;
+    put_kstack(p);
+    kfree(p);
+}
+static void audit_frame(struct proc_struct *p) {
+    assert((uintptr_t)p->tf >= p->kstack);
+    assert((uintptr_t)p->tf + sizeof(*p->tf) <= p->kstack + KSTACKSIZE);
+    assert(((uintptr_t)p->tf & 15) == 0);
+    assert(p->context.ra == (uintptr_t)forkret);
+    assert(p->context.sp == (uintptr_t)p->tf);
+    assert(p->tf->gpr.a0 == 0);
+    uintptr_t *words = (uintptr_t *)&p->context;
+    for (size_t i = 2; i < sizeof(p->context) / sizeof(*words); i++) assert(words[i] == 0);
+}
+static int audit_never_called(void *arg) {
+    panic("kernel_thread must not directly call the entry function");
+}
+
+static void audit_failures(void) {
+    struct trapframe tf = {0};
+    size_t pages_before = nr_free_pages();
+    int count_before = nr_process;
+    size_t list_before = audit_nodes(&proc_list), hash_before = audit_hash_nodes();
+    size_t ac = pcb_calls, sc = stack_calls, pf = pcb_frees, sf = stack_frees;
+    nr_process = MAX_PROCESS;
+    assert(do_fork(0, 0, &tf) == -E_NO_FREE_PROC);
+    nr_process = count_before;
+    assert(pcb_calls == ac && stack_calls == sc);
+    audit_pass("process limit rejects before resource allocation");
+
+    fail_pcb = 1;
+    assert(do_fork(0, 0, &tf) == -E_NO_MEM && fail_pcb == 0);
+    assert(stack_calls == sc && pcb_frees == pf && stack_frees == sf);
+    audit_pass("PCB allocation failure returns ENOMEM without registration");
+
+    fail_stack = 1;
+    assert(do_fork(0, 0, &tf) == -E_NO_MEM && fail_stack == 0);
+    assert(pcb_frees == pf + 1 && stack_frees == sf);
+    audit_pass("kernel-stack allocation failure releases PCB");
+
+    struct mm_struct dummy_mm;
+    current->mm = &dummy_mm;
+    assert(do_fork(CLONE_VM, 0, &tf) == -E_INVAL);
+    current->mm = NULL;
+    assert(pcb_frees == pf + 2 && stack_frees == sf + 1);
+    assert(nr_free_pages() == pages_before);
+    assert(nr_process == count_before);
+    assert(audit_nodes(&proc_list) == list_before && audit_hash_nodes() == hash_before);
+    audit_pass("unsupported user mm cleans stack and PCB, preserves all registries");
+}
+
+static void audit_copy(void) {
+    struct trapframe source, saved;
+    memset(&source, 0x5a, sizeof(source));
+    saved = source;
+    struct proc_struct *p = alloc_proc();
+    assert(p != NULL && setup_kstack(p) == 0);
+    memset(&p->context, 0xa5, sizeof(p->context));
+    copy_thread(p, 0, &source);
+    audit_frame(p);
+    assert(p->tf != &source && p->tf->gpr.sp == (uintptr_t)p->tf);
+    struct trapframe expected = source;
+    expected.gpr.a0 = 0;
+    expected.gpr.sp = (uintptr_t)p->tf;
+    assert(memcmp(p->tf, &expected, sizeof(expected)) == 0);
+    assert(memcmp(&source, &saved, sizeof(source)) == 0);
+    audit_pass("copy_thread copies the full frame, clears context, isolates parent stack");
+
+    uintptr_t explicit_sp = (p->kstack + KSTACKSIZE - 512) & ~(uintptr_t)15;
+    copy_thread(p, explicit_sp, &source);
+    audit_frame(p);
+    assert(p->tf->gpr.sp == explicit_sp);
+    assert(memcmp(&source, &saved, sizeof(source)) == 0);
+    put_kstack(p);
+    kfree(p);
+    audit_pass("copy_thread preserves a supplied aligned stack pointer");
+}
+
+static void audit_success(void) {
+    struct proc_struct *parent = current;
+    size_t pages_before = nr_free_pages();
+    size_t list_before = audit_nodes(&proc_list), hash_before = audit_hash_nodes();
+    int count_before = nr_process;
+    uintptr_t status = read_csr(sstatus);
+    assert(!(status & SSTATUS_SIE));
+    int pid1 = kernel_thread(audit_never_called, NULL, CLONE_THREAD);
+    struct proc_struct *a = find_proc(pid1);
+    assert(pid1 > 0 && a != NULL && a != parent && a != initproc);
+    assert(current == parent && a->parent == parent);
+    assert(a->mm == NULL && a->pgdir == boot_pgdir_pa && a->state == PROC_RUNNABLE);
+    audit_frame(a);
+    assert(a->tf->epc == (uintptr_t)kernel_thread_entry);
+    assert(a->tf->gpr.s0 == (uintptr_t)audit_never_called && a->tf->gpr.s1 == 0);
+    assert(a->tf->status == ((status | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE));
+    assert(!(read_csr(sstatus) & SSTATUS_SIE));
+    audit_pass("kernel_thread builds entry, null argument and S-mode status without running it");
+
+    intr_enable();
+    status = read_csr(sstatus);
+    int pid2 = kernel_thread(audit_never_called, (void *)0x2412819, 0);
+    assert(read_csr(sstatus) & SSTATUS_SIE);
+    intr_disable();
+    struct proc_struct *b = find_proc(pid2);
+    assert(pid2 > 0 && pid2 != pid1 && b != NULL && b != a);
+    assert(current == parent && b->parent == parent && b->state == PROC_RUNNABLE);
+    assert(b->tf->gpr.s1 == 0x2412819);
+    assert(b->tf->status == ((status | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE));
+    assert(a->kstack + KSTACKSIZE <= b->kstack || b->kstack + KSTACKSIZE <= a->kstack);
+    audit_frame(b);
+    assert(nr_process == count_before + 2);
+    assert(audit_nodes(&proc_list) == list_before + 2 && audit_hash_nodes() == hash_before + 2);
+    audit_pass("unique PIDs, parent, independent stacks, registry counts and interrupt restoration");
+    audit_release(a);
+    audit_release(b);
+    assert(find_proc(pid1) == NULL && find_proc(pid2) == NULL);
+    assert(nr_process == count_before && nr_free_pages() == pages_before);
+    assert(audit_nodes(&proc_list) == list_before && audit_hash_nodes() == hash_before);
+    audit_pass("diagnostic cleanup restores allocated stack pages and process registries");
+}
+
+static int audit_entry(void *arg) {
+    assert(arg == (void *)0x2412819);
+    assert(current != idleproc && current->state == PROC_RUNNABLE);
+    uintptr_t sp;
+    asm volatile("mv %0, sp" : "=r"(sp));
+    assert(sp >= current->kstack && sp < current->kstack + KSTACKSIZE);
+    assert((sp & 15) == 0);
+    assert((read_csr(sstatus) & SSTATUS_SPP) == 0);
+    assert(read_csr(sstatus) & SSTATUS_SIE);
+    audit_pass("real forkret/forkrets/sret/kernel_thread_entry reaches fn(arg) on child stack");
+    cprintf("[2412819] ALL CREATION TESTS PASSED\n");
+    sbi_shutdown();
+    while (1) ;
+}
+
+/* Deliberately no scheduler/proc_run/switch_to implementation: test only creation. */
+void cpu_idle(void) {
+    intr_disable();
+    assert(current == idleproc && initproc != NULL && initproc->pid == 1);
+    assert(initproc->parent == idleproc && initproc->mm == NULL);
+    assert(initproc->state == PROC_RUNNABLE && initproc->pgdir == boot_pgdir_pa);
+    audit_frame(initproc);
+    audit_pass("original proc_init creates and registers initproc with the real four functions");
+    audit_copy();
+    audit_failures();
+    audit_success();
+    int pid = kernel_thread(audit_entry, (void *)0x2412819, 0);
+    assert(pid > 0 && find_proc(pid) != NULL);
+    current = find_proc(pid);
+    forkret();
+    panic("forkret unexpectedly returned");
+}
