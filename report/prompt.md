@@ -1,5 +1,7 @@
 # Lab 3 提示词记录
 
+历史提示词保留原样。2026-11-13 梁靖泽部分的实际子 agent 委派提示词及环境补充见第三节；主 agent 在代码子 agent 完成后追加该记录与报告，不将既有整理版或已删除测试脚本当作本轮新增实现。
+
 ## 2412439—崔迪
 
 ### Trap 上下文恢复与入口
@@ -195,4 +197,33 @@ Case 2：编译失败、程序崩溃、出现 FAIL，或超时前没有完整成
 Requirements：不要覆盖之前的成功日志来掩盖新失败。复测可用 --log-dir 另存一份；这组结果只证明异常与现场恢复，不代表时钟、关机或课程总评分。
 ````
 
+### 三、2026-11-13 实际下发的代码子 agent 提示词
+
+主 agent 先阅读 README 分工和本地 Lab 0.5 指导，向子 agent Herschel 实际下发以下提示词。以下四段正文保留实际发送内容；历史提示词中独立测试脚本的设计仅作历史记录，本轮没有恢复该脚本。代码核验与测试完成后，主 agent 才整理本节、报告 5.4 与日志。
+
+````text
+[PROMPT]
+任务：负责 README.md 中 2412852-梁靖泽 的 Lab 3 代码任务：核验并在必要时完成 code/kern/trap/trap.c 中异常识别、16/32 位指令判长、EPC 推进及未知异常兜底。当前分支 lab3 上已有实现，不要为制造改动重写正确逻辑。
+操作要求：先读 README.md 的分工/代码边界、本地 ../lab2026/_book/lab0.5/3_prompt_structure.html、4_practice_guide.html 的正文以及 Lab 3 对应练习。遵守适用 AGENTS.md。实际代码修改仅限 trap.c 的 lab3 function2 区域内 exception_instruction_length、exception_handler 及必要局部辅助函数；保留 lab3 标记和 2412852 署名。不得修改队友 interrupt_handler、trapentry.S、SAVE_ALL、trapframe、分发/打印/初始化函数、Makefile、链接脚本及课程评分工具；不得引入用户态 Challenge、栈回溯或 SBI 整理。正确代码不变，发现真实缺陷才用 apply_patch 做最小修改。不要写 README 或 report 下任何文档/日志，不要提交或推送，不要生成常驻独立异常测试脚本（README 明确已删除这类入口）。测试脚本/注入代码只能在 /tmp 临时目录或临时副本中执行。不得再委派。
+输出要求：交付代码文件（如确需修复）与真实验证证据；报告实际修改路径、行为是否已满足、逐项测试结果、命令、临时日志路径及限制。主 agent 将在你完成后把本次实际提示词、验证记录和报告说明整理入仓库。若已有实现完全正确，明确报告无需源码改动，仍完成可执行验证，不要虚构修改。
+
+[RELY]
+真实定义来自 code/kern/trap/trap.h：struct trapframe { struct pushregs gpr; uintptr_t status; uintptr_t epc; uintptr_t badvaddr; uintptr_t cause; }; void print_trapframe(struct trapframe *tf); gpr 对应 x0..x31；RV64 uintptr_t 为 64 位无符号。code/libs/riscv.h 定义 CAUSE_ILLEGAL_INSTRUCTION=0x2、CAUSE_BREAKPOINT=0x3。cprintf 已声明。trap_dispatch 按 (intptr_t)tf->cause < 0 分中断和异常；RESTORE_ALL 将 frame 中 status/epc 写回 sstatus/sepc，恢复 GPR 和原 sp，再由 sret 返回。异常分工不改汇编。已有 helper 读取 const volatile uint16_t；已有 handler 对两个 cause 打印并按 helper 推进，default print_trapframe。本任务只覆盖可读、两字节对齐内核代码中的 16/32 位指令；不假设 badvaddr 保存指令内容；不扩展长指令/安全用户取指。实际工具链已可找到 /home/ljz/opt/riscv-elf-toolchains/bin/riscv64-unknown-elf-gcc 与 /home/ljz/opt/qemu-7.0.0/bin/qemu-system-riscv64；请确认版本，执行真实 make 目标，必要选项由现有 Makefile 决定，不能改 Makefile 以掩盖问题。
+
+[GUARANTEE]
+最终保留准确接口：static uintptr_t exception_instruction_length(uintptr_t epc); void exception_handler(struct trapframe *tf); 不改变公开结构或签名；若新增辅助函数必须 static 且位于同一异常填空范围。不改其他成员实现。
+
+[SPECIFICATION]
+exception_instruction_length：Pre-Condition：epc 指向两字节对齐、首半字可读的有效内核代码，编码属于任务限定 16/32 位。Post-Condition：只返回长度，绝不写代码或 frame。Success case：首半字低两位 != 0b11 返回 2；== 0b11 返回 4，epc 为 4n+2 也正确。Failure/边界：不进行可能未对齐的 32 位读取，不承诺处理不可读地址、48/64 位以上指令。
+exception_handler：Pre-Condition：tf 是可写有效 frame、cause 是同步异常；仅非法指令与断点要求 epc 可读。Post-Condition：非法指令输出含 Illegal instruction at 和原 EPC，断点输出含 Breakpoint at 和原 EPC，两者按实际指令长度推进 EPC；其余 frame 字段、GPR、ticks 和其他中断状态不变。Success cases：分别覆盖 16/32 位断点及非法编码，含 4n+2 处 32 位指令。Failure/default case：其他 cause 调用原 print_trapframe，保持 EPC/整个 frame 不变；即使未知 cause 的 EPC=0 也不可取指，不 panic 或自行更改 CSR。
+验证：先阅读实现核对写入面；执行 make clean && make、make grade 和受控正常启动（10 次 100 ticks 后 SBI 自动关机），保留 /tmp 原始输出及退出码。在 /tmp 临时副本/测试驱动补充 handler 各 case（至少上述 4 种编码、半字对齐、未知 cause EPC=0、frame/GPR/ticks 不变），尽量验证真实 ebreak/c.ebreak/非法指令通过 trap 返回后的寄存器和原栈；不修改课程原始评分文件。不得把未运行测试写成已通过。若环境问题先诊断，清晰说明而非改工程基础设施。最终列出测试覆盖与未覆盖内容、日志文件路径，等待主 agent 审阅。
+````
+
+执行期间实际追加的环境线索如下（不是修改任务范围，也不是预先断言本轮通过）：
+
+```text
+补充已读报告线索（非本轮验证结论）：/home/ljz/opt/qemu-4.1.1/bin/qemu-system-riscv64 确实存在。report/report.md 4.3 记录 GCC15 汇编器对旧 sbadaddr 名报错，历史仅在临时副本把该 CSR 操作数替换为等价数值 0x143；QEMU7 未正常启动，历史改用已装 QEMU4.1.1。若本轮原样构建失败请保留原失败日志，兼容替换只作用于 /tmp 副本，再用该副本 grade/boot 证实，不改正式框架。明确区分原工作树失败与副本通过，主agent会如实写报告。
+```
+
+执行结果：子 agent 确认现有异常代码已正确，无源码改动；原树受 `sbadaddr` 构建兼容问题阻塞，仅临时兼容副本在 QEMU 4.1.1 上构建、评分 100/100、输出 10 次后关机均退出 0。另完成主机 ASan/UBSan 与 8 组 RV64 真实异常等补测。主 agent 审阅原始日志后归档，完整覆盖、限制及复现命令见 [报告 5.4](report.md#54-2026-11-13-梁靖泽分工复核主-agent-整理) 与 [本轮日志](logs/2412852-20261113-recheck.txt)。
 

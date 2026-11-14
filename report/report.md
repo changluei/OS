@@ -7,6 +7,7 @@
 | **实验名称** | Lab 3：中断与异常 |
 | **小组成员** | 2412439-崔迪、2412819-李子谦、2412852-梁靖泽 |
 | **完成日期** | 2026-11-08 |
+| **梁靖泽部分补充复核** | 2026-11-13；代码子 agent 核验后由主 agent 整理文档 |
 
 ### 小组分工
 
@@ -464,6 +465,60 @@ Total Score: 100/100
 三项评分均为 PASS，总分 100/100，对应 [评分日志](logs/2412439-lab3-grade.txt)。
 
 ---
+
+### 5.4 2026-11-13 梁靖泽分工复核（主 agent 整理）
+
+本轮依据 README 分工重新核对梁靖泽负责的异常处理、指令判长、`stvec` 思考题、模块一说明和原理总结。主 agent 先阅读 Lab 0.5 的标准提示词结构、实践指南及 Lab 3 练习，再把基于真实接口的四段式提示词实际发给代码子 agent Herschel。子 agent 只负责源码审查和测试，完成后才由主 agent 编写本节、归档证据并更新 README 与提示词记录。实际提示词见 [prompt.md 第三节](prompt.md#三2026-11-13-实际下发的代码子-agent-提示词)；不把历史整理版冒充本轮交互。
+
+#### 代码结论与规格对应
+
+已有 `exception_instruction_length()` 用 `const volatile uint16_t *` 读取首半字，在本实验的 16/32 位前提下按低两位返回 2 或 4；`exception_handler()` 对非法指令、断点先打印原 EPC，再只推进 `tf->epc`；其他 cause 调用原 `print_trapframe()`，不解引用 EPC。因此本轮无需修改源码，`2412852` 署名、队友代码、课程工具及框架接口均保留。
+
+本轮 `[RELY]` 取自实际 `trap.h/riscv.h/trapentry.S`，`[GUARANTEE]` 逐一列出两个准确函数签名。`[SPECIFICATION]` 把可读且两字节对齐的内核代码作为前置条件，把“仅目标异常可改变 EPC、其他现场不变”作为后置条件，并明确未知 cause 的 EPC 可以为 0。这样测试能检查错误的统一加 4、未对齐整字取指和 default 分支误取指，而不只是检查有无诊断输出。
+
+#### 本轮真实结果
+
+工具链为 GCC 15.1.0；本机默认 QEMU 7.0.0，另有课程版本 QEMU 4.1.1。以下结果均来自本轮实际执行，不改写 11 月 4 日和 11 月 8 日的历史记录。
+
+| 验证对象与命令 | 结果与证据边界 |
+|----------------|----------------|
+| 原工作树 `make clean && make`、`make grade`、`timeout 30s make qemu` | 均退出 2；汇编器报 `unknown CSR sbadaddr`，原树没有在当前工具链通过构建、评分或启动 |
+| `/tmp` 兼容副本 `make clean && make` | 只把 `csrr s3, sbadaddr` 换成相同 CSR 编号 `csrr s3, 0x143`；构建退出 0，不将此改动写回正式框架 |
+| 兼容副本 `make grade`，QEMU 4.1.1 | 35/35、25/25、40/40，`Total Score: 100/100`，退出 0 |
+| 兼容副本 `timeout 90s make qemu`，QEMU 4.1.1 | 恰好 10 行 `100 ticks`，自然关机，退出 0；不是由 timeout 终止后声称成功 |
+| 兼容镜像在 QEMU 7.0.0 启动 | 8 秒内只见固件输出，退出 124；不据此断言根因或声称兼容 |
+| 主机 ASan/UBSan 验证 | 131072 次半字分类（两个对齐位置各 65536 次）、8 组 handler、11 种未知 cause，以及只读代码和保护页边界检查通过；日志/兜底为测试替身 |
+| RV64 直接调用与真实 Trap | 8 组 handler、11 种未知 cause、8 组真实异常通过，`PASS failures=0`；真实执行原诊断及兜底函数 |
+
+真实故障指令为 `c.ebreak=0x9002`、`ebreak=0x00100073`、16 位非法编码 `0x0000`、32 位非法编码 `0x0000007b`，分别放在 `4n` 和 `4n+2` 地址。检查原 EPC 输出、返回后继续执行、x0～x31、原 SP 和栈哨兵；直接调用还检查除 EPC 外完整 frame、`ticks`、`sie` 与 SIE 不变。11 种未知 cause 使用 EPC=0，验证不取指且整个 frame 不变。
+
+半字穷举只是检验当前函数的低位分类规则，不表示全部编码都是有效的 16/32 位指令；保护页边界检查只验证判长函数不多读，不声称处理器能在不可读后续半字上正常执行 32 位指令。未知异常兜底返回不等于能修复真实故障。长指令、已识别异常的不可读 EPC、用户态和开中断并发异常均不在本轮验证范围。主机 LeakSanitizer 因 ptrace 环境限制关闭，AddressSanitizer 和 UndefinedBehaviorSanitizer 保留。
+
+#### 本机复现与证据
+
+不修改正式树即可重现环境兼容处理和课程验收：
+
+```bash
+# 从仓库根目录执行；临时目录保存副本，不新增正式测试入口。
+repo="$PWD"
+work=$(mktemp -d /tmp/lab3-2412852-recheck.XXXXXX)
+cp -a "$repo/code" "$work/compat"
+sed -i 's/csrr s3, sbadaddr/csrr s3, 0x143/' "$work/compat/kern/trap/trapentry.S"
+export PATH=/home/ljz/opt/riscv-elf-toolchains/bin:/home/ljz/opt/qemu-4.1.1/bin:$PATH
+cd "$work/compat"
+make clean && make
+make grade
+timeout 90s make qemu
+cmp "$repo/code/kern/trap/trap.c" kern/trap/trap.c
+```
+
+原工作树的失败、兼容补丁、构建/评分/启动、主机与 RV64 补测、初次测试驱动错误及修正后的结果、退出码和汇总均收入 [本轮原始日志](logs/2412852-20261113-recheck.txt)。临时测试驱动位于本次 `/tmp/lab3-2412852-20261113-hjMbfp/`，非持久入口，清理 `/tmp` 后不可保证存在；仓库不恢复独立异常测试脚本，也不宣称只靠日志能重新生成完整补测驱动。本轮没有新增截图，历史图片仍按原日期引用。
+
+#### 文档与原理核对
+
+主 agent 在代码子 agent 完成后复核了 4.1、4.4 和第六章：模块一仍按 36 槽/288 字节的真实 frame 说明，最后恢复原 SP，不回写诊断 CSR；`stvec` 兼容性来自四字节对齐旧地址的低两位为 0，对应 Direct，`BASE` 通过屏蔽低两位取得，Vectored 的同步异常仍进入 BASE；原理总结继续区分 Trap 现场与调度上下文、实验跳过故障指令与一般缺页重试、单 hart 关中断与多核锁。已有正确说明保留，不冒认队友的模块一实现，也不实现 README 已排除的用户态 Challenge。
+
+本轮没有发现需要修复的异常算法 bug。实际阻塞是工具链的旧 CSR 名兼容；主机测试初次头文件路径错误、LeakSanitizer 限制和 RV64 测试驱动初次链接失败均在临时测试环境修正，失败输出与成功输出同时归档，不以改内核掩盖测试问题。
 
 ## 六、实验总结与收获
 

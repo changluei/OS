@@ -1,0 +1,1037 @@
+2026-11-13 梁靖泽部分复核：主 agent 在代码子 agent 完成后归档原始输出。
+来源临时目录：/tmp/lab3-2412852-20261113-hjMbfp
+原工作树构建受旧 CSR 名阻塞；通过结果仅属于临时兼容副本。
+测试驱动未作为常驻入口收入仓库；命令、范围和限制见 report/report.md 5.4。
+
+===== environment.log =====
+/home/ljz/course/os/OS
+lab3
+riscv64-unknown-elf-gcc (g1b306039ac4) 15.1.0
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+QEMU emulator version 7.0.0
+Copyright (c) 2003-2022 Fabrice Bellard and the QEMU Project developers
+
+===== build.log =====
+rm -f -r obj bin
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
+kern/trap/trapentry.S: Assembler messages:
+kern/trap/trapentry.S:47: Error: unknown CSR `sbadaddr'
+kern/trap/trapentry.S:104:  Info: macro invoked from here
+make: *** [Makefile:118: obj/kern/trap/trapentry.o] Error 1
+
+EXIT_CODE=build=2
+
+===== original-grade.log =====
+lab3 injection complete
+Building trap entry, register restore, and breakpoint EPC...
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
+kern/trap/trapentry.S: Assembler messages:
+kern/trap/trapentry.S:47: Error: unknown CSR `sbadaddr'
+kern/trap/trapentry.S:104:  Info: macro invoked from here
+gmake[1]: *** [Makefile:120: obj/kern/trap/trapentry.o] Error 1
+  - trap entry, register restore, and breakpoint EPC: FAIL (build)
+Building illegal instruction EPC advance and return...
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
+kern/trap/trapentry.S: Assembler messages:
+kern/trap/trapentry.S:47: Error: unknown CSR `sbadaddr'
+kern/trap/trapentry.S:104:  Info: macro invoked from here
+gmake[1]: *** [Makefile:120: obj/kern/trap/trapentry.o] Error 1
+  - illegal instruction EPC advance and return: FAIL (build)
+Building re-armed supervisor timer and repeated trap return...
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
+kern/trap/trapentry.S: Assembler messages:
+kern/trap/trapentry.S:47: Error: unknown CSR `sbadaddr'
+kern/trap/trapentry.S:104:  Info: macro invoked from here
+gmake[1]: *** [Makefile:120: obj/kern/trap/trapentry.o] Error 1
+  - re-armed supervisor timer and repeated trap return: FAIL (build)
+Total Score: 0/100
+make: *** [Makefile:213: grade] Error 1
+
+EXIT_CODE=original-grade=2
+
+===== original-boot.log =====
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
+kern/trap/trapentry.S: Assembler messages:
+kern/trap/trapentry.S:47: Error: unknown CSR `sbadaddr'
+kern/trap/trapentry.S:104:  Info: macro invoked from here
+make: *** [Makefile:118: obj/kern/trap/trapentry.o] Error 1
+
+EXIT_CODE=original-boot=2
+
+===== compatibility.log =====
+QEMU emulator version 4.1.1
+Copyright (c) 2003-2019 Fabrice Bellard and the QEMU Project developers
+
+Temporary compatibility diff:
+--- code/kern/trap/trapentry.S	2026-10-30 10:58:57.084122070 +0800
++++ /tmp/lab3-2412852-20261113-hjMbfp/compat/kern/trap/trapentry.S	2026-11-13 14:42:04.570109085 +0800
+@@ -44,7 +44,7 @@
+     csrrw s0, sscratch, x0
+     csrr s1, sstatus
+     csrr s2, sepc
+-    csrr s3, sbadaddr
++    csrr s3, 0x143
+     csrr s4, scause
+ 
+     STORE s0, 2*REGBYTES(sp)
+
+===== compat-build.log =====
+rm -f -r obj bin
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+
+EXIT_CODE=compat-build=0
+
+===== compat-grade.log =====
+lab3 injection complete
+Building trap entry, register restore, and breakpoint EPC...
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc kern/test/test_lab3.c
++ cc kern/test/test_lab3_context.S
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+Running trap entry, register restore, and breakpoint EPC...
+  - trap entry, register restore, and breakpoint EPC: PASS (35/35)
+Building illegal instruction EPC advance and return...
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc kern/test/test_lab3.c
++ cc kern/test/test_lab3_context.S
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+Running illegal instruction EPC advance and return...
+  - illegal instruction EPC advance and return: PASS (25/25)
+Building re-armed supervisor timer and repeated trap return...
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc kern/test/test_lab3.c
++ cc kern/test/test_lab3_context.S
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+Running re-armed supervisor timer and repeated trap return...
+  - re-armed supervisor timer and repeated trap return: PASS (40/40)
+Total Score: 100/100
+
+EXIT_CODE=compat-grade=0
+
+===== compat-boot.log =====
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+Special kernel symbols:
+  entry  0xffffffffc0200054 (virtual)
+  etext  0xffffffffc020209c (virtual)
+  edata  0xffffffffc0207028 (virtual)
+  end    0xffffffffc0207498 (virtual)
+Kernel executable memory footprint: 30KB
+memory management: default_pmm_manager
+physical memory map:
+  memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
+  managed end: 0x0000000088000000, free begin: 0x0000000080348000
+check_alloc_page() succeeded!
+satp virtual address: 0xffffffffc0206000
+satp physical address: 0x0000000080206000
+++ setup timer interrupts
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+
+EXIT_CODE=compat-boot=0
+
+===== qemu7-compat-boot.log =====
+
+OpenSBI v1.0
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name             : riscv-virtio,qemu
+Platform Features         : medeleg
+Platform HART Count       : 1
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 10000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform Reboot Device    : sifive_test
+Platform Shutdown Device  : sifive_test
+Firmware Base             : 0x80000000
+Firmware Size             : 252 KB
+Runtime SBI Version       : 0.3
+
+Domain0 Name              : root
+Domain0 Boot HART         : 0
+Domain0 HARTs             : 0*
+Domain0 Region00          : 0x0000000002000000-0x000000000200ffff (I)
+Domain0 Region01          : 0x0000000080000000-0x000000008003ffff ()
+Domain0 Region02          : 0x0000000000000000-0xffffffffffffffff (R,W,X)
+Domain0 Next Address      : 0x0000000000000000
+Domain0 Next Arg1         : 0x0000000087000000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+
+Boot HART ID              : 0
+Boot HART Domain          : root
+Boot HART ISA             : rv64imafdcsuh
+Boot HART Features        : scounteren,mcounteren,time
+Boot HART PMP Count       : 16
+Boot HART PMP Granularity : 4
+Boot HART PMP Address Bits: 54
+Boot HART MHPM Count      : 0
+Boot HART MIDELEG         : 0x0000000000001666
+Boot HART MEDELEG         : 0x0000000000f0b509
+qemu-system-riscv64: terminating on signal 15 from pid 19 (timeout)
+
+EXIT_CODE=qemu7-compat-boot=124
+
+===== host-test-first-compile.log =====
+In file included from host_test.c:11:
+/home/ljz/course/os/OS/code/kern/trap/trap.h:4:10: fatal error: defs.h: No such file or directory
+    4 | #include <defs.h>
+      |          ^~~~~~~~
+compilation terminated.
+
+EXIT_CODE=host-test=1
+
+===== host-test-lsan-failure.log =====
+==11==LeakSanitizer has encountered a fatal error.
+==11==HINT: For debugging, try setting environment variable LSAN_OPTIONS=verbosity=1:log_threads=1
+==11==HINT: LeakSanitizer does not work under ptrace (strace, gdb, etc)
+
+EXIT_CODE=host-test=1
+
+===== host-test.log =====
+PASS helper: 65536 halfwords at EPC % 4 = 0
+PASS helper: 65536 halfwords at EPC % 4 = 2
+PASS handler: cause=3 low=0x9002 EPC%4=0; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=3 low=0x0073 EPC%4=0; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=2 low=0x0000 EPC%4=0; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=2 low=0x007b EPC%4=0; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=3 low=0x9002 EPC%4=2; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=3 low=0x0073 EPC%4=2; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=2 low=0x0000 EPC%4=2; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS handler: cause=2 low=0x007b EPC%4=2; original EPC output, only EPC changes, code read-only, ticks unchanged
+PASS halfword-only read at PROT_NONE page boundary (EPC % 4 = 2)
+PASS 11 unknown synchronous causes: EPC=0, exactly one original fallback, entire frame/ticks unchanged
+ALL HOST TESTS PASS
+
+EXIT_CODE=host-test=0
+
+===== rvtest-first-build.log =====
+Makefile:117: warning: overriding recipe for target 'obj/kern/init/supplemental.d'
+Makefile:117: warning: ignoring old recipe for target 'obj/kern/init/supplemental.d'
+Makefile:117: warning: overriding recipe for target 'obj/kern/init/supplemental.o'
+Makefile:117: warning: ignoring old recipe for target 'obj/kern/init/supplemental.o'
+rm -f -r obj bin
+Makefile:117: warning: overriding recipe for target 'obj/kern/init/supplemental.d'
+Makefile:117: warning: ignoring old recipe for target 'obj/kern/init/supplemental.d'
+Makefile:117: warning: overriding recipe for target 'obj/kern/init/supplemental.o'
+Makefile:117: warning: ignoring old recipe for target 'obj/kern/init/supplemental.o'
+Makefile:117: warning: overriding recipe for target 'obj/kern/init/supplemental.d'
+Makefile:117: warning: ignoring old recipe for target 'obj/kern/init/supplemental.d'
+Makefile:117: warning: overriding recipe for target 'obj/kern/init/supplemental.o'
+Makefile:117: warning: ignoring old recipe for target 'obj/kern/init/supplemental.o'
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/init/supplemental.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-ld: obj/kern/init/supplemental.o: in function `supplemental_tests':
+/tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:29: multiple definition of `supplemental_tests'; obj/kern/init/supplemental.o:/tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:29: first defined here
+riscv64-unknown-elf-ld: obj/kern/init/supplemental.o: in function `supplemental_tests':
+/tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:59:(.text.supplemental_tests+0x198): undefined reference to `site_c_ebreak_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:63:(.text.supplemental_tests+0x1b6): undefined reference to `site_c_ebreak_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:66:(.text.supplemental_tests+0x1d6): undefined reference to `site_ebreak_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:69:(.text.supplemental_tests+0x1f4): undefined reference to `site_ebreak_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:72:(.text.supplemental_tests+0x214): undefined reference to `site_illegal16_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:73:(.text.supplemental_tests+0x232): undefined reference to `site_illegal16_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:76:(.text.supplemental_tests+0x252): undefined reference to `site_illegal32_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:78:(.text.supplemental_tests+0x26e): undefined reference to `site_illegal32_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:49:(.text.supplemental_tests+0x316): undefined reference to `probe_illegal32_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:61:(.text.supplemental_tests+0x32e): undefined reference to `probe_illegal16_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:87:(.text.supplemental_tests+0x348): undefined reference to `probe_ebreak_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:83:(.text.supplemental_tests+0x362): undefined reference to `probe_c_ebreak_a0'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:76:(.text.supplemental_tests+0x37c): undefined reference to `probe_c_ebreak_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:70:(.text.supplemental_tests+0x396): undefined reference to `probe_illegal32_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:64:(.text.supplemental_tests+0x3b0): undefined reference to `probe_illegal16_a0_a2'
+riscv64-unknown-elf-ld: /tmp/lab3-2412852-20261113-hjMbfp/rvtest/kern/init/supplemental.c:65:(.text.supplemental_tests+0x3ca): undefined reference to `probe_ebreak_a0_a2'
+make: *** [Makefile:128: bin/kernel] Error 1
+
+EXIT_CODE=rvtest-build=2
+
+===== rvtest-build.log =====
+rm -f -r obj bin
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/init/supplemental.c
++ cc kern/init/supplemental_context.S
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/best_fit_pmm.c
++ cc kern/mm/default_pmm.c
++ cc kern/mm/pmm.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+
+EXIT_CODE=rvtest-build=0
+
+===== rvtest-boot.log =====
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+Special kernel symbols:
+  entry  0xffffffffc0200054 (virtual)
+  etext  0xffffffffc0203670 (virtual)
+  edata  0xffffffffc0208028 (virtual)
+  end    0xffffffffc0208498 (virtual)
+Kernel executable memory footprint: 34KB
+memory management: default_pmm_manager
+physical memory map:
+  memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
+  managed end: 0x0000000088000000, free begin: 0x0000000080349000
+check_alloc_page() succeeded!
+satp virtual address: 0xffffffffc0207000
+satp physical address: 0x0000000080207000
+Breakpoint at 0xffffffffc0204aa4
+PASS direct case 0: frame/GPR/ticks/sie/SIE, only EPC changes
+Breakpoint at 0xffffffffc0204aac
+PASS direct case 1: frame/GPR/ticks/sie/SIE, only EPC changes
+Illegal instruction at 0xffffffffc0204ab4
+PASS direct case 2: frame/GPR/ticks/sie/SIE, only EPC changes
+Illegal instruction at 0xffffffffc0204abc
+PASS direct case 3: frame/GPR/ticks/sie/SIE, only EPC changes
+Breakpoint at 0xffffffffc0204ac6
+PASS direct case 4: frame/GPR/ticks/sie/SIE, only EPC changes
+Breakpoint at 0xffffffffc0204ace
+PASS direct case 5: frame/GPR/ticks/sie/SIE, only EPC changes
+Illegal instruction at 0xffffffffc0204ad6
+PASS direct case 6: frame/GPR/ticks/sie/SIE, only EPC changes
+Illegal instruction at 0xffffffffc0204ade
+PASS direct case 7: frame/GPR/ticks/sie/SIE, only EPC changes
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000000
+PASS unknown cause 0: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000001
+PASS unknown cause 1: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000004
+PASS unknown cause 4: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000005
+PASS unknown cause 5: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000008
+PASS unknown cause 8: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000009
+PASS unknown cause 9: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x0000000c
+PASS unknown cause 12: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x0000000d
+PASS unknown cause 13: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x0000000f
+PASS unknown cause 15: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0x00000014
+PASS unknown cause 20: EPC=0, whole frame/ticks/sie/SIE unchanged
+trapframe at 0xffffffffc0206d40
+  zero     0x7a55300b
+  ra       0xa27d5833
+  sp       0xcaa5805b
+  gp       0xf2cda883
+  tp       0x1af5d0ab
+  t0       0x421df8d3
+  t1       0x6a4520fb
+  t2       0x926d4823
+  s0       0xba95704b
+  s1       0xe2bd9873
+  a0       0x0ae5c09b
+  a1       0x320de8c3
+  a2       0x5a3510eb
+  a3       0x825d3813
+  a4       0xaa85603b
+  a5       0xd2ad8863
+  a6       0xfad5b08b
+  a7       0x22fdd8b3
+  s2       0x4a2500db
+  s3       0x724d2803
+  s4       0x9a75502b
+  s5       0xc29d7853
+  s6       0xeac5a07b
+  s7       0x12edc8a3
+  s8       0x3a15f0cb
+  s9       0x623d18f3
+  s10      0x8a65401b
+  s11      0xb28d6843
+  t3       0xdab5906b
+  t4       0x02ddb893
+  t5       0x2a05e0bb
+  t6       0x522d08e3
+  status   0x7a55300b
+  epc      0x00000000
+  badvaddr 0xcaa5805b
+  cause    0xffffffff
+PASS unknown cause 9223372036854775807: EPC=0, whole frame/ticks/sie/SIE unchanged
+CASE c_ebreak_a0 expected=ffffffffc02005a4 alignment=0
+Breakpoint at 0xffffffffc02005a4
+PASS real c_ebreak_a0: x0..x31, original sp, stack canaries restored
+CASE c_ebreak_a2 expected=ffffffffc02007e2 alignment=2
+Breakpoint at 0xffffffffc02007e2
+PASS real c_ebreak_a2: x0..x31, original sp, stack canaries restored
+CASE ebreak_a0 expected=ffffffffc0200a1c alignment=0
+Breakpoint at 0xffffffffc0200a1c
+PASS real ebreak_a0: x0..x31, original sp, stack canaries restored
+CASE ebreak_a2 expected=ffffffffc0200c5a alignment=2
+Breakpoint at 0xffffffffc0200c5a
+PASS real ebreak_a2: x0..x31, original sp, stack canaries restored
+CASE illegal16_a0 expected=ffffffffc0200e98 alignment=0
+Illegal instruction at 0xffffffffc0200e98
+PASS real illegal16_a0: x0..x31, original sp, stack canaries restored
+CASE illegal16_a2 expected=ffffffffc02010d6 alignment=2
+Illegal instruction at 0xffffffffc02010d6
+PASS real illegal16_a2: x0..x31, original sp, stack canaries restored
+CASE illegal32_a0 expected=ffffffffc0201310 alignment=0
+Illegal instruction at 0xffffffffc0201310
+PASS real illegal32_a0: x0..x31, original sp, stack canaries restored
+CASE illegal32_a2 expected=ffffffffc020154e alignment=2
+Illegal instruction at 0xffffffffc020154e
+PASS real illegal32_a2: x0..x31, original sp, stack canaries restored
+SUPPLEMENTAL RESULT: PASS failures=0
+
+EXIT_CODE=rvtest-boot=0
+
+===== validation-summary.log =====
+PASS real encoding / original EPC / classification / alignment: c_ebreak_a0 9002 ffffffffc02005a4
+PASS real encoding / original EPC / classification / alignment: c_ebreak_a2 9002 ffffffffc02007e2
+PASS real encoding / original EPC / classification / alignment: ebreak_a0 00100073 ffffffffc0200a1c
+PASS real encoding / original EPC / classification / alignment: ebreak_a2 00100073 ffffffffc0200c5a
+PASS real encoding / original EPC / classification / alignment: illegal16_a0 0000 ffffffffc0200e98
+PASS real encoding / original EPC / classification / alignment: illegal16_a2 0000 ffffffffc02010d6
+PASS real encoding / original EPC / classification / alignment: illegal32_a0 0000007b ffffffffc0201310
+PASS real encoding / original EPC / classification / alignment: illegal32_a2 0000007b ffffffffc020154e
+PASS normal boot: exactly 10 tick lines, natural QEMU/make exit 0
+PASS original course grade in compatibility copy: 35+25+40=100/100
+PASS trap.c identical in both temporary copies, SHA256=08d36329688e62ae39922c09dd36c479080e98c70b752bd840eb2f360b54fc86
+PASS host: ASan+UBSan (LeakSanitizer disabled due ptrace limitation), 131072 low-halfword classifications, 8 frame/output/code-preservation cases, protected-page boundary, 11 defaults
+LIMIT: no long instructions, inaccessible recognized EPC, user-mode or interrupt-enabled concurrent exception scenarios tested; host stubs logging/fallback, RV64 uses actual logging/fallback
+
+EXIT_CODE=evidence-validation=0
+
+===== final-git-status.log =====
+
+===== final-git-diff.log =====
+
+EXIT_CODE=git-diff=0
+
+===== ALL RECORDED EXIT FILES =====
+build.exit=build=2
+compat-boot.exit=compat-boot=0
+compat-build.exit=compat-build=0
+compat-grade.exit=compat-grade=0
+final-git-diff.exit=git-diff=0
+host-test-first-compile.exit=host-test=1
+host-test-lsan-failure.exit=host-test=1
+host-test.exit=host-test=0
+original-boot.exit=original-boot=2
+original-grade.exit=original-grade=2
+qemu7-compat-boot.exit=qemu7-compat-boot=124
+rvtest-boot.exit=rvtest-boot=0
+rvtest-build.exit=rvtest-build=0
+rvtest-first-build.exit=rvtest-build=2
+rvtest-first-success-boot.exit=rvtest-boot=0
+rvtest-first-success-build.exit=rvtest-build=0
+validation-summary.exit=evidence-validation=0
