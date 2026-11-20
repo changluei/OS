@@ -355,4 +355,29 @@ bad_fork_cleanup_proc:
 }
 
 
-//LAB4 function3 YOUR CODE
+//LAB4 function3 2412852
+void cpu_idle(void)
+{
+    while (1)
+    {
+        if (current->need_resched)
+        {
+            schedule();
+        }
+    }
+}
+
+void proc_run(struct proc_struct *proc)
+{
+    if (proc != current)
+    {
+        bool intr_flag;
+        local_intr_save(intr_flag);
+        struct proc_struct *prev = current;
+        current = proc;
+        write_csr(satp, 0x8000000000000000ULL | (proc->pgdir >> RISCV_PGSHIFT));
+        flush_tlb();
+        switch_to(&prev->context, &proc->context);
+        local_intr_restore(intr_flag);
+    }
+}

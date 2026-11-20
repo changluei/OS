@@ -21,10 +21,12 @@
 - [x] 导入 Lab 4 课程框架，迁移 Lab 2/3 的必要实现。
 - [ ] 完成模块一：虚拟内存页操作。
 - [ ] 完成模块二：进程创建与初始化。
-- [ ] 完成模块三：进程调度与上下文切换。
+- [x] 完成模块三：进程调度与上下文切换（2412852，2026-11-20）。
 - [ ] 三人分别完成各自代码的规格、提示词和调试记录。
 - [ ] 整理 Challenge 思考题；当前暂不分配负责人，不计入编程工作量。
 - [ ] 完成 Lab 4 整体构建、运行、课程验收与正式报告。
+
+梁靖泽已完成本人四个函数；两份 Lab 0.5 四段式提示词由主 agent 编写并分别发送给代码子 agent，代码完成后由主 agent 补齐本人报告与验证记录。详见 [提示词](report/prompt.md)、[模块三报告](report/report.md#功能模块三调度与上下文切换)及 [真实验证日志](report/logs/2412852-lab4-tests.txt)。2026-11-20 使用命令行 GCC 兼容选项和 QEMU 4.1.1 完成内核构建、idle/init 首次运行及课程评分 **30/30**；评分注入只在临时副本进行，未修改课程工具或队友代码。其他成员文档、Challenge、截图和正式报告公共部分仍待小组整理，不能视为全部交付完成。
 
 ## 实验依据与材料
 
@@ -32,8 +34,10 @@
 - [Lab 4 分工方案](report/lab4-division.md)：本阶段的任务与交付约定。
 - [Lab 4 框架接入记录](report/lab4-framework.md)：压缩包来源、前置代码迁移、框架差异及构建结果。
 - [Lab 3 仓库说明](report/archive/lab3-readme.md)：前置代码、开发环境和历史验收说明。
-- [现有实验报告](report/report.md)、[现有提示词](report/prompt.md)、`report/logs/` 和 `report/images/`：目前均为 Lab 2/3 历史材料；Lab 4 开始整理正式报告时再归档和更新。
+- [现有实验报告](report/report.md)、[现有提示词](report/prompt.md)、`report/logs/` 和 `report/images/`：报告和提示词已有 Lab 4 成员章节，日志同时保留历史检查和本次验证，截图仍待小组整理。
 
 网站练习页已提示：`libs/riscv.h` 中的旧 `lsatp()` 是 Sv32 遗留实现，不能用于本实验的 Sv39 页表切换。模块三应参考 Lab 4 框架 `kern/mm/pmm.c` 的 `enable_paging()`，正确设置 `satp` 并刷新 TLB。
 
-2026-11-11 已在现有 Docker 环境执行构建：源码编译与汇编完成，链接因 Lab 4 尚未实现的 `page_insert()`、`page_remove()`、`proc_init()`、`cpu_idle()` 而失败。详见 [构建日志](report/logs/20261111-lab4-framework-build.txt)；当前尚未生成可运行内核，运行与课程评分待三个模块完成后执行。
+2026-11-11 已在现有 Docker 环境执行构建：源码编译与汇编完成，链接因 Lab 4 尚未实现的 `page_insert()`、`page_remove()`、`proc_init()`、`cpu_idle()` 而失败。详见 [构建日志](report/logs/20261111-lab4-framework-build.txt)；当时尚未生成可运行内核，运行与课程评分待三个模块完成后执行。
+
+以上为 2026-11-11 接入时的历史状态；本次可运行镜像及 30/30 验收结果以 2026-11-20 的验证日志为准。正式 init 返回后仍进入框架 `do_exit()` 的占位 panic，本次未扩展进程退出功能。

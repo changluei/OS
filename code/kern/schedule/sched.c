@@ -10,6 +10,29 @@ wakeup_proc(struct proc_struct *proc) {
     proc->state = PROC_RUNNABLE;
 }
 
-//LAB4 function3 YOUR CODE
-
+//LAB4 function3 2412852
+void
+schedule(void) {
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    current->need_resched = 0;
+    struct proc_struct *next = idleproc;
+    list_entry_t *start = (current == idleproc) ? &proc_list : &current->list_link;
+    list_entry_t *entry = start;
+    do {
+        entry = list_next(entry);
+        if (entry != &proc_list) {
+            struct proc_struct *proc = le2proc(entry, list_link);
+            if (proc->state == PROC_RUNNABLE) {
+                next = proc;
+                break;
+            }
+        }
+    } while (entry != start);
+    next->runs ++;
+    if (next != current) {
+        proc_run(next);
+    }
+    local_intr_restore(intr_flag);
+}
 

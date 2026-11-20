@@ -1,5 +1,72 @@
 # Lab 4 提示词记录
 
+## 2412852—梁靖泽
+
+依据本地 `../lab2026/_book/lab0.5/2_prompt_engineering.html`、`3_prompt_structure.html` 和 `4_practice_guide.html`，主 agent 先核对真实接口，再采用任务导向的 `[PROMPT]`、`[RELY]`、`[GUARANTEE]`、`[SPECIFICATION]` 四段式结构，描述行为、状态与边界，而非要求照抄算法步骤。
+
+以下两份原文于 2026-11-20 分别发送给不继承聊天历史的子 agent Ptolemy 和 Mill。两者写入范围互不重叠：前者负责 C 调度链路，后者负责汇编上下文。代码完成后，主 agent 复核、验证并整理本文和报告；子 agent 不负责文档。不涉及队友函数、Challenge 或 Git 提交。
+
+### 一、单核线程调度链路（Ptolemy）
+
+````text
+[PROMPT]
+任务：完成 Lab 4 单核内核线程的协作调度链路，让 idle 根据调度请求让出 CPU，按循环顺序选择 runnable 线程，并安全切换当前线程和 Sv39 页表。只修改 code/kern/process/proc.c 的 LAB4 function3 区域（cpu_idle、proc_run）和 code/kern/schedule/sched.c 的 LAB4 function3 区域（schedule）。
+操作要求：在你的工作区用 apply_patch 修改真实文件；保留其他成员代码和公开接口，只将本人区域标记署名为 LAB4 function3 2412852，不新增代码内注释，不修改 switch.S（另一子 agent 负责），不编写文档，不提交 Git。可以运行针对性验证，但不能为通过验证修改其他模块。
+输出要求：以工程实际定义和下列行为规格为准，直接完成代码，最后列出修改路径、关键实现和真实验证结果/未验证项。不要把步骤式伪代码当成规格。
+
+[RELY]
+读取 proc.c、proc.h、sched.c、sched.h、sync.h、riscv.h、pmm.h，以及 pmm.c 的 enable_paging()。current、idleproc 和 proc_list 是现有全局对象；idleproc 不在 proc_list 中。proc_struct 的 state（PROC_UNINIT/PROC_SLEEPING/PROC_RUNNABLE/PROC_ZOMBIE）、runs、volatile bool need_resched、list_link、context、uintptr_t pgdir 为相关字段；pgdir 是根页表物理地址，不是内核虚拟地址。list_next、list_empty、le2proc 为现有链表接口。local_intr_save/restore 保存和恢复原 SIE 状态，支持嵌套临界区。switch_to(struct context *from, struct context *to) 已在 proc.c 声明，其汇编由另一个 agent 完成。RISCV_PGSHIFT=12；pmm.c enable_paging 使用 write_csr(satp, 0x8000000000000000 | (boot_pgdir_pa >> RISCV_PGSHIFT))，需核对现有 flush_tlb() 接口。libs/riscv.h 的 lsatp(unsigned int) 是 Sv32 遗留，严禁调用。当前所有内核线程共享 boot_pgdir_pa，但仍须实现通用页表切换语义。无需实现抢占时钟策略或进程退出。
+
+[GUARANTEE]
+void cpu_idle(void);（保留 proc.h 的 noreturn 声明）
+void schedule(void);
+void proc_run(struct proc_struct *proc);
+不修改公开签名或结构布局，无需新增辅助函数；若确有需要，只允许所属文件内 static 辅助函数。
+
+[SPECIFICATION]
+## cpu_idle
+Pre-Condition：proc_init 已完成，current 为 idleproc，进程列表有效，单核内核环境。
+Post-Condition：永久执行 idle 循环；当 current->need_resched 非零时请求 schedule，无调度请求时不调用 schedule；不得返回或自行改动进程生命周期。
+Requirements：不无条件关闭中断，不增加未约定的 WFI/抢占机制。
+## schedule
+Pre-Condition：current、idleproc、proc_list 已初始化；普通进程的 list_link 属于 proc_list，idleproc 不在列表中。
+Post-Condition：在受中断保护的临界区处理一次调度，清除发起调度线程的 need_resched；从当前普通线程之后开始循环扫描，idle 发起时从表头后开始；选择第一个 PROC_RUNNABLE 线程，绕过睡眠、未初始化和僵尸线程；目标 runs 增加一次，只有目标不同于 current 时调用 proc_run。
+Case 1：列表为空或没有 runnable 普通线程，目标为 idleproc。
+Case 2：扫描绕回后当前普通线程是唯一 runnable，允许继续选择自身，更新 runs 但不切换上下文。
+Case 3：有多个 runnable 普通线程，依链表循环顺序轮转，不优先重复选当前线程，不把链表哨兵解释为 PCB。
+Requirements：选择、need_resched、runs 维护和切换请求整体处于临界区；本线程从切换恢复后恢复调用 schedule 前的中断开关状态；不重排进程列表或改变线程 state。
+## proc_run
+Pre-Condition：proc 非 NULL 且 PROC_RUNNABLE，current 有效；proc->pgdir 是合法、页对齐的 Sv39 根页表物理地址；新旧 context 均符合 switch_to 约定。
+Post-Condition：目标不同时，以原 current 为保存现场的对象，current 指向目标，satp 采用 RV64 Sv39 模式和目标根页表 PPN，TLB 失效后进入目标 context；原线程以后恢复时可正常从本调用返回，并恢复进入时的中断状态。
+Case 1：proc==current 时无上下文或页表切换，无全局状态变化。
+Case 2：目标不同，current、satp、TLB、寄存器上下文切换保持一致，切换窗口不可被中断观察到中间状态。
+Requirements：satp 使用 64 位模式位，不能截断物理地址或沿用 Sv32 lsatp；TLB 刷新发生在页表切换后和目标现场执行前；不改 runs（由 schedule 负责），不保存 trapframe 或新增栈切换入口。
+````
+
+### 二、RV64 上下文保存与恢复（Mill）
+
+````text
+[PROMPT]
+任务：实现 Lab 4 RV64 内核线程上下文切换底层能力，与 C 层 proc_run 和线程首次运行现场兼容。唯一可写文件为 code/kern/process/switch.S，补全 LAB4 function3 区域。
+操作要求：用 apply_patch 修改实际文件，标记署名 LAB4 function3 2412852；保留公开接口和其他代码，不新增代码内注释，不修改 proc.c、sched.c、proc.h、Trap 或入口汇编（调度链路由另一子 agent 完成），不编写文档，不提交 Git。允许针对性汇编/反汇编验证，不改其他模块以绕过问题。
+输出要求：使用下面真实结构和行为规格完成代码，最后列出改动文件、寄存器布局依据以及真实验证/未验证项。
+
+[RELY]
+读取 code/kern/process/proc.h、proc.c、entry.S、switch.S 和 kern/trap/trapentry.S。struct context 按以下顺序含十四个 uintptr_t 字段：ra、sp、s0、s1、s2、s3、s4、s5、s6、s7、s8、s9、s10、s11；RV64 每字段 8 字节。proc.c 已声明 void switch_to(struct context *from, struct context *to)。RV64 ABI 用 a0 传 from，a1 传 to；C 调用者负责中断临界区、current 和页表切换。copy_thread 为新线程构造 context.ra=forkret、context.sp=新线程内核栈上的 trapframe 地址，forkret 经 forkrets 恢复 trapframe。常规切换需返回旧线程 switch_to 调用后的 C 续执行点。
+
+[GUARANTEE]
+void switch_to(struct context *from, struct context *to);（用 .globl switch_to 导出同名汇编入口）
+不新增公开接口，不改变 struct context，不新增辅助函数或另一个 Trap 恢复入口。
+
+[SPECIFICATION]
+## switch_to
+Pre-Condition：RV64 S 态，from、to 指向不同的有效 context，均有足够存储并符合 uintptr_t 对齐；调用者已保护临界区并完成 current 与页表切换；目标 sp、ra 为合法恢复现场。
+Post-Condition：from 精确保留本次调用的 ra、sp、s0–s11；上述十四个寄存器从 to 恢复；控制流进入目标 ra，使用目标栈。目标 context 本身只读，其他进程/内存不受影响。
+Case 1：目标为已有线程，恢复它上次保存的现场，使其像从此前 switch_to 返回一样继续运行。
+Case 2：目标为新线程，使用 copy_thread 构造的 sp 和 ra 进入 forkret，再沿现有 forkrets/kernel_thread_entry 链路首次运行，不能额外调整 trapframe 或自行调用线程函数。
+Requirements：严格按 proc.h 布局使用 RV64 64 位访存；不能漏保存/恢复 s0 或 s11，不能截断 ra/sp；无需保存 ABI caller-saved 寄存器、gp/tp、浮点寄存器或 CSR；访存期间 a0/a1 对应的 context 指针仍有效。不得操作 satp、中断开关或 current，不建立自己的额外栈帧。
+````
+
 ## 2412819—李子谦
 
 负责线程创建与首次运行现场。以下两份提示词分别用于现场构造和资源管理，原文发送给子 agent；只修改本人四个函数，不代写队友模块。
@@ -67,5 +134,4 @@ Case 2：PCB 或内核栈申请失败，返回 -E_NO_MEM，已申请的资源按
 Case 3：copy_mm 失败，返回它的错误码，回收内核栈和 PCB。
 Requirements：失败时链表、哈希和进程数不变，不释放父线程或内核共享页表；PID 分配、登记、计数及唤醒在保存中断状态的临界区完成，退出后恢复原状态。
 ````
-
 

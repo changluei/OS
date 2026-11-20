@@ -1,0 +1,552 @@
+Lab4：2412852—梁靖泽 调度与上下文切换验证
+日期：2026-11-20（Asia/Shanghai）
+环境：WSL / Ubuntu 22.04.5 LTS；RISC-V GCC 15.1.0；QEMU 4.1.1；默认 QEMU 7.0.0 仅用于失败启动对照。
+分工：主 agent 编写提示词，Ptolemy 实现 cpu_idle/schedule/proc_run，Mill 实现 switch_to；子 agent 完成后主 agent 复核、重新验证并编写文档。
+范围：三个正式代码文件的 LAB4 function3；不改其他成员函数、公共结构、Makefile、Trap、课程注入器和评分工具；不提交 Git。
+
+一、正式源码指纹
+94e0c2e5d9f4f58e1138ad56333e01fafb3d8e7dddfb69e83cc05dc9a5bd61b9  code/kern/process/proc.c
+ffaaa01819761c966245e4d5bcd540edb3acec8bbd00a217523b0f3130d0a79d  code/kern/process/switch.S
+52a20ac382447303dafd3f1f9a334f4802d53cc304f98b40873b4302f69c0a4e  code/kern/schedule/sched.c
+
+二、构建命令与兼容性
+工作目录：/home/ljz/course/os/OS
+初次命令：
+make -C code -j2 OBJDIR=/tmp/lab4-2412852-validation/obj BINDIR=/tmp/lab4-2412852-validation/bin LDFLAGS='-m elf64lriscv -nostdlib --gc-sections'
+退出码：2。GCC 15 报错来自既有 kmalloc.c 整数转指针，未改该源码。
+兼容命令：
+compiler_flags=$(make -s -C code print-CFLAGS)
+make -C code -j2 OBJDIR=/tmp/lab4-2412852-validation/obj BINDIR=/tmp/lab4-2412852-validation/bin CFLAGS="$compiler_flags -Wno-error=int-conversion -Wno-error=incompatible-pointer-types" LDFLAGS='-m elf64lriscv -nostdlib --gc-sections'
+退出码：0。只降低历史框架类型诊断，不改变编译器其他检查，不修改 Makefile。
+
+--- build.log ---
+make: Entering directory '/home/ljz/course/os/OS/code'
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/readline.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/driver/picirq.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/default_pmm.c
++ cc kern/mm/kmalloc.c
+kern/mm/kmalloc.c: In function '__slob_free_pages':
+kern/mm/kmalloc.c:92:29: error: passing argument 1 of 'kva2page' makes pointer from integer without a cast [-Wint-conversion]
+   92 |         free_pages(kva2page(kva), 1 << order);
+      |                             ^~~
+      |                             |
+      |                             long unsigned int
+In file included from kern/mm/kmalloc.c:7:
+kern/mm/pmm.h:117:16: note: expected 'void *' but argument is of type 'long unsigned int'
+  117 | kva2page(void *kva)
+      |          ~~~~~~^~~
+make: *** [Makefile:120: /tmp/lab4-2412852-validation/obj/kern/mm/kmalloc.o] Error 1
+make: *** Waiting for unfinished jobs....
+make: Leaving directory '/home/ljz/course/os/OS/code'
+
+--- build-compatible.log ---
+make: Entering directory '/home/ljz/course/os/OS/code'
++ cc kern/mm/kmalloc.c
++ cc kern/mm/pmm.c
+kern/mm/kmalloc.c: In function '__slob_free_pages':
+kern/mm/kmalloc.c:92:29: warning: passing argument 1 of 'kva2page' makes pointer from integer without a cast [-Wint-conversion]
+   92 |         free_pages(kva2page(kva), 1 << order);
+      |                             ^~~
+      |                             |
+      |                             long unsigned int
+In file included from kern/mm/kmalloc.c:7:
+kern/mm/pmm.h:117:16: note: expected 'void *' but argument is of type 'long unsigned int'
+  117 | kva2page(void *kva)
+      |          ~~~~~~^~~
++ cc kern/mm/vmm.c
++ cc kern/process/entry.S
++ cc kern/process/proc.c
++ cc kern/process/switch.S
++ cc kern/schedule/sched.c
++ cc libs/hash.c
++ cc libs/printfmt.c
++ cc libs/string.c
++ ld /tmp/lab4-2412852-validation/bin/kernel
+riscv64-unknown-elf-objcopy /tmp/lab4-2412852-validation/bin/kernel --strip-all -O binary /tmp/lab4-2412852-validation/bin/ucore.img
+make: Leaving directory '/home/ljz/course/os/OS/code'
+
+三、真实启动
+命令：
+timeout 8 /home/ljz/opt/qemu-4.1.1/bin/qemu-system-riscv64 -machine virt -nographic -bios default -device loader,file=/tmp/lab4-2412852-validation/bin/ucore.img,addr=0x80200000
+退出码：0。真实进入 init 并打印问候；init 返回后进入框架 do_exit 的 process exit!!. panic/debug monitor，非本模块新增错误，不越界修复。
+默认 qemu-system-riscv64（7.0.0）同参数运行超时，退出码 124，OpenSBI 显示 Next Address 为零，未出现内核输出，不算通过。
+
+--- run.log ---
+
+OpenSBI v1.0
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name             : riscv-virtio,qemu
+Platform Features         : medeleg
+Platform HART Count       : 1
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 10000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform Reboot Device    : sifive_test
+Platform Shutdown Device  : sifive_test
+Firmware Base             : 0x80000000
+Firmware Size             : 252 KB
+Runtime SBI Version       : 0.3
+
+Domain0 Name              : root
+Domain0 Boot HART         : 0
+Domain0 HARTs             : 0*
+Domain0 Region00          : 0x0000000002000000-0x000000000200ffff (I)
+Domain0 Region01          : 0x0000000080000000-0x000000008003ffff ()
+Domain0 Region02          : 0x0000000000000000-0xffffffffffffffff (R,W,X)
+Domain0 Next Address      : 0x0000000000000000
+Domain0 Next Arg1         : 0x0000000087000000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+
+Boot HART ID              : 0
+Boot HART Domain          : root
+Boot HART ISA             : rv64imafdcsuh
+Boot HART Features        : scounteren,mcounteren,time
+Boot HART PMP Count       : 16
+Boot HART PMP Granularity : 4
+Boot HART PMP Address Bits: 54
+Boot HART MHPM Count      : 0
+Boot HART MIDELEG         : 0x0000000000001666
+Boot HART MEDELEG         : 0x0000000000f0b509
+qemu-system-riscv64: terminating on signal 15 from pid 65 (timeout)
+
+--- run-qemu4.log ---
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+
+Special kernel symbols:
+  entry  0xc020004a (virtual)
+  etext  0xc0203d8e (virtual)
+  edata  0xc0209030 (virtual)
+  end    0xc020d4e8 (virtual)
+Kernel executable memory footprint: 54KB
+memory management: best_fit_pmm_manager
+physical memory map:
+  memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
+  managed end: 0x0000000088000000, free begin: 0x000000008040e000
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+++ setup timer interrupts
+this initproc, pid = 1, name = "init"
+To U: "Hello world!!".
+To U: "en.., Bye, Bye. :)"
+kernel panic at kern/process/proc.c:208:
+    process exit!!.
+
+Welcome to the kernel debug monitor!!
+Type 'help' for a list of commands.
+
+四、课程评分
+独立临时副本路径记录在 /tmp/lab4-2412852-validation/grade-dir。
+准备与编译命令：
+validation_dir=$(mktemp -d /tmp/lab4-2412852-grade-XXXXXX)
+tar -C code --exclude=obj --exclude=bin -cf - . | tar -C "$validation_dir" -xf -
+python3 code/tools/inject.py "$validation_dir"
+compiler_flags=$(make -s -C "$validation_dir" print-CFLAGS)
+make -C "$validation_dir" -j2 CFLAGS="$compiler_flags -Wno-error=int-conversion -Wno-error=incompatible-pointer-types" LDFLAGS='-m elf64lriscv -nostdlib --gc-sections'
+注入器和课程测试本体未修改；课程测试线程 void (*)(void *) 与 kernel_thread 所需 int (*)(void *) 不匹配，在 GCC 15 下同样需要仅命令行降级诊断。
+初次沙箱内 sh tools/grade.sh -v 失败：QEMU/GDB 无法创建本地调试套接字，Operation not permitted；该次无可用评分输出，不算通过。
+获授权后在沙箱外执行：
+cd "$validation_dir"
+QEMU=/home/ljz/opt/qemu-4.1.1/bin/qemu-system-riscv64 sh tools/grade.sh -v
+退出码：0；PMM、Process Create、Schedule 各 10 分，总分 30/30。
+
+--- grade-build.log ---
+make: Entering directory '/tmp/lab4-2412852-grade-GZh57O'
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/readline.c
++ cc kern/libs/stdio.c
++ cc kern/debug/kdebug.c
++ cc kern/debug/kmonitor.c
++ cc kern/debug/panic.c
++ cc kern/driver/clock.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/driver/intr.c
++ cc kern/driver/picirq.c
++ cc kern/trap/trap.c
++ cc kern/trap/trapentry.S
++ cc kern/mm/default_pmm.c
++ cc kern/mm/kmalloc.c
+kern/mm/kmalloc.c: In function '__slob_free_pages':
+kern/mm/kmalloc.c:92:29: warning: passing argument 1 of 'kva2page' makes pointer from integer without a cast [-Wint-conversion]
+   92 |         free_pages(kva2page(kva), 1 << order);
+      |                             ^~~
+      |                             |
+      |                             long unsigned int
+In file included from kern/mm/kmalloc.c:7:
+kern/mm/pmm.h:117:16: note: expected 'void *' but argument is of type 'long unsigned int'
+  117 | kva2page(void *kva)
+      |          ~~~~~~^~~
++ cc kern/mm/pmm.c
++ cc kern/mm/vmm.c
++ cc kern/process/entry.S
++ cc kern/process/proc.c
++ cc kern/process/switch.S
++ cc kern/schedule/sched.c
++ cc kern/test/test_lab4.c
+In file included from kern/test/test_lab4.c:2:
+kern/test/test_lab4.c: In function 'test_lab4_schedule':
+kern/test/test_lab4.c:90:26: warning: passing argument 1 of 'kernel_thread' from incompatible pointer type [-Wincompatible-pointer-types]
+   90 |     assert(kernel_thread(test_lab4_thread, (void *)(intptr_t)1, 0) > 0);
+      |                          ^~~~~~~~~~~~~~~~
+      |                          |
+      |                          void (*)(void *)
+kern/debug/assert.h:17:15: note: in definition of macro 'assert'
+   17 |         if (!(x)) {                                     \
+      |               ^
+In file included from kern/test/test_lab4.c:4:
+kern/process/proc.h:67:25: note: expected 'int (*)(void *)' but argument is of type 'void (*)(void *)'
+   67 | int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags);
+      |                   ~~~~~~^~~~~~~~~~~
+kern/test/test_lab4.c:68:13: note: 'test_lab4_thread' declared here
+   68 | static void test_lab4_thread(void *arg)
+      |             ^~~~~~~~~~~~~~~~
+kern/test/test_lab4.c:91:26: warning: passing argument 1 of 'kernel_thread' from incompatible pointer type [-Wincompatible-pointer-types]
+   91 |     assert(kernel_thread(test_lab4_thread, (void *)(intptr_t)2, 0) > 0);
+      |                          ^~~~~~~~~~~~~~~~
+      |                          |
+      |                          void (*)(void *)
+kern/debug/assert.h:17:15: note: in definition of macro 'assert'
+   17 |         if (!(x)) {                                     \
+      |               ^
+kern/process/proc.h:67:25: note: expected 'int (*)(void *)' but argument is of type 'void (*)(void *)'
+   67 | int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags);
+      |                   ~~~~~~^~~~~~~~~~~
+kern/test/test_lab4.c:68:13: note: 'test_lab4_thread' declared here
+   68 | static void test_lab4_thread(void *arg)
+      |             ^~~~~~~~~~~~~~~~
++ cc libs/hash.c
++ cc libs/printfmt.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+make: Leaving directory '/tmp/lab4-2412852-grade-GZh57O'
+
+--- grade.log ---
+qemu-system-riscv64: -gdb tcp::1234: Failed to create a socket: Operation not permitted
+  -check PMM:                                no $qemu_out
+  -check Process Create:                     no $qemu_out
+  -check Schedule:                           no $qemu_out
+Total Score: 0/30
+
+--- grade-qemu4.log ---
+  -check PMM:                                OK
+  -check Process Create:                     OK
+  -check Schedule:                           OK
+Total Score: 30/30
+
+--- 课程评分的实际 .qemu.out ---
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+
+Special kernel symbols:
+  entry  0xc020004a (virtual)
+  etext  0xc0204452 (virtual)
+  edata  0xc020a030 (virtual)
+  end    0xc020e4f0 (virtual)
+Kernel executable memory footprint: 58KB
+memory management: best_fit_pmm_manager
+physical memory map:
+  memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
+  managed end: 0x0000000088000000, free begin: 0x000000008040f000
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+[Test PMM] PASS
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+[Test Process Create] PASS
+++ setup timer interrupts
+[Test Schedule] PASS
+this initproc, pid = 1, name = "init"
+To U: "Hello world!!".
+To U: "en.., Bye, Bye. :)"
+kernel panic at kern/process/proc.c:209:
+    process exit!!.
+
+Welcome to the kernel debug monitor!!
+Type 'help' for a list of commands.
+
+五、针对性模拟与汇编
+Ptolemy 创建 /tmp/lab4-function3-test 夹具，直接包含正式 sched.c，从正式 proc.c 提取本人 function3；主 agent 重新执行 /tmp/lab4-function3-test/test，结果：
+PASS: 2562 scheduler cases; proc_run same-target/direct switch; Sv39 high PA, TLB ordering and nested SIE restoration (mock switch).
+边界：switch_to、CSR 与 flush_tlb 均为替身，用于检查调度选择、状态、调用顺序与恢复，不证明硬件寄存器保存或不同地址空间。正式 QEMU 课程测试补充真实首次运行及线程往返。夹具不增加到正式代码树，下面保留其源文件便于复核。
+
+--- 模拟夹具 test.c ---
+#include <proc.h>
+#include <sync.h>
+#include <sched.h>
+#include <assert.h>
+
+extern int puts(const char *text);
+list_entry_t proc_list;
+struct proc_struct *current, *idleproc, *initproc;
+unsigned long test_sstatus;
+static unsigned long long test_satp;
+static int writes, flushes, switches;
+static struct proc_struct *selected;
+static struct proc_struct idle, threads[4];
+
+void intr_disable(void) { test_sstatus &= ~SSTATUS_SIE; }
+void intr_enable(void) { test_sstatus |= SSTATUS_SIE; }
+void test_write_satp(unsigned long long value) {
+    assert(!(test_sstatus & SSTATUS_SIE));
+    assert(value == (0x8000000000000000ULL | (current->pgdir >> 12)));
+    test_satp = value;
+    writes++;
+}
+static void flush_tlb(void) {
+    assert(!(test_sstatus & SSTATUS_SIE));
+    assert(writes == flushes + 1);
+    flushes++;
+}
+void switch_to(struct context *from, struct context *to) {
+    assert(!(test_sstatus & SSTATUS_SIE));
+    assert(writes == flushes && flushes == switches + 1);
+    assert(to == &current->context);
+    assert(test_satp == (0x8000000000000000ULL | (current->pgdir >> 12)));
+    selected = current;
+    switches++;
+    current = to_struct(from, struct proc_struct, context);
+    test_satp = 0x8000000000000000ULL | (current->pgdir >> 12);
+}
+#include "proc-functions.inc"
+#include "/home/ljz/course/os/OS/code/kern/schedule/sched.c"
+
+static void reset(int count) {
+    list_init(&proc_list);
+    idle = (struct proc_struct){ .state = PROC_RUNNABLE, .pgdir = 0x80000000ULL };
+    idleproc = &idle;
+    for (int index = 0; index < count; index++) {
+        threads[index] = (struct proc_struct){ .pgdir = 0x123456789000ULL + (index << 12) };
+        list_add_before(&proc_list, &threads[index].list_link);
+    }
+    writes = flushes = switches = 0;
+    selected = NULL;
+}
+int main(void) {
+    int cases = 0;
+    for (int enabled = 0; enabled < 2; enabled++) {
+        reset(0);
+        current = idleproc;
+        current->need_resched = 1;
+        test_sstatus = enabled ? SSTATUS_SIE : 0;
+        schedule();
+        assert(current == idleproc && !current->need_resched && idle.runs == 1);
+        assert(!switches && test_sstatus == (enabled ? SSTATUS_SIE : 0));
+        cases++;
+        for (int states = 0; states < 256; states++) {
+            for (int origin = -1; origin < 4; origin++) {
+                reset(4);
+                for (int index = 0; index < 4; index++) {
+                    threads[index].state = (states >> (2 * index)) & 3;
+                    threads[index].need_resched = 1;
+                }
+                idle.need_resched = 1;
+                struct proc_struct *source = origin < 0 ? idleproc : &threads[origin];
+                struct proc_struct *expected = idleproc;
+                for (int offset = 1; offset <= 4; offset++) {
+                    int index = (origin + offset) % 4;
+                    if (threads[index].state == PROC_RUNNABLE) {
+                        expected = &threads[index];
+                        break;
+                    }
+                }
+                current = source;
+                test_sstatus = enabled ? SSTATUS_SIE : 0;
+                schedule();
+                assert(current == source && !source->need_resched);
+                assert(expected->runs == 1);
+                assert(switches == (source != expected));
+                assert(source == expected || selected == expected);
+                assert(test_sstatus == (enabled ? SSTATUS_SIE : 0));
+                for (int index = 0; index < 4; index++) {
+                    assert(threads[index].state == ((states >> (2 * index)) & 3));
+                    assert(threads[index].runs == (&threads[index] == expected));
+                    assert(list_next(index ? &threads[index - 1].list_link : &proc_list) == &threads[index].list_link);
+                    assert(threads[index].need_resched == (&threads[index] != source));
+                }
+                cases++;
+            }
+        }
+        reset(1);
+        current = idleproc;
+        test_sstatus = enabled ? SSTATUS_SIE : 0;
+        proc_run(current);
+        assert(!writes && !flushes && !switches && current == idleproc);
+        threads[0].state = PROC_RUNNABLE;
+        proc_run(&threads[0]);
+        assert(switches == 1 && selected == &threads[0] && current == idleproc);
+        assert(!threads[0].runs && test_sstatus == (enabled ? SSTATUS_SIE : 0));
+    }
+    assert(cases == 2562);
+    puts("PASS: 2562 scheduler cases; proc_run same-target/direct switch; Sv39 high PA, TLB ordering and nested SIE restoration (mock switch).");
+    return 0;
+}
+
+--- 模拟夹具 proc-functions.inc ---
+//LAB4 function3 2412852
+void cpu_idle(void)
+{
+    while (1)
+    {
+        if (current->need_resched)
+        {
+            schedule();
+        }
+    }
+}
+
+void proc_run(struct proc_struct *proc)
+{
+    if (proc != current)
+    {
+        bool intr_flag;
+        local_intr_save(intr_flag);
+        struct proc_struct *prev = current;
+        current = proc;
+        write_csr(satp, 0x8000000000000000ULL | (proc->pgdir >> RISCV_PGSHIFT));
+        flush_tlb();
+        switch_to(&prev->context, &proc->context);
+        local_intr_restore(intr_flag);
+    }
+}
+
+--- 模拟夹具 riscv.h ---
+#define SSTATUS_SIE 2
+#define RISCV_PGSHIFT 12
+extern unsigned long test_sstatus;
+void test_write_satp(unsigned long long value);
+#define read_csr(reg) test_sstatus
+#define write_csr(reg, value) test_write_satp(value)
+
+--- 模拟夹具 assert.h ---
+#define assert(value) do { if (!(value)) __builtin_trap(); } while (0)
+
+--- 正式内核 switch_to 反汇编 ---
+
+/tmp/lab4-2412852-validation/bin/kernel:     file format elf64-littleriscv
+
+
+Disassembly of section .text:
+
+ffffffffc02037ac <switch_to>:
+ffffffffc02037ac:	00153023          	sd	ra,0(a0)
+ffffffffc02037b0:	00253423          	sd	sp,8(a0)
+ffffffffc02037b4:	e900                	sd	s0,16(a0)
+ffffffffc02037b6:	ed04                	sd	s1,24(a0)
+ffffffffc02037b8:	03253023          	sd	s2,32(a0)
+ffffffffc02037bc:	03353423          	sd	s3,40(a0)
+ffffffffc02037c0:	03453823          	sd	s4,48(a0)
+ffffffffc02037c4:	03553c23          	sd	s5,56(a0)
+ffffffffc02037c8:	05653023          	sd	s6,64(a0)
+ffffffffc02037cc:	05753423          	sd	s7,72(a0)
+ffffffffc02037d0:	05853823          	sd	s8,80(a0)
+ffffffffc02037d4:	05953c23          	sd	s9,88(a0)
+ffffffffc02037d8:	07a53023          	sd	s10,96(a0)
+ffffffffc02037dc:	07b53423          	sd	s11,104(a0)
+ffffffffc02037e0:	0005b083          	ld	ra,0(a1)
+ffffffffc02037e4:	0085b103          	ld	sp,8(a1)
+ffffffffc02037e8:	6980                	ld	s0,16(a1)
+ffffffffc02037ea:	6d84                	ld	s1,24(a1)
+ffffffffc02037ec:	0205b903          	ld	s2,32(a1)
+ffffffffc02037f0:	0285b983          	ld	s3,40(a1)
+ffffffffc02037f4:	0305ba03          	ld	s4,48(a1)
+ffffffffc02037f8:	0385ba83          	ld	s5,56(a1)
+ffffffffc02037fc:	0405bb03          	ld	s6,64(a1)
+ffffffffc0203800:	0485bb83          	ld	s7,72(a1)
+ffffffffc0203804:	0505bc03          	ld	s8,80(a1)
+ffffffffc0203808:	0585bc83          	ld	s9,88(a1)
+ffffffffc020380c:	0605bd03          	ld	s10,96(a1)
+ffffffffc0203810:	0685bd83          	ld	s11,104(a1)
+ffffffffc0203814:	8082                	ret
+
+六、最终边界
+主 agent 执行 git diff --check 通过。代码改动仅本人四个函数所在三文件的 function3 区域；文档由主 agent 在代码完成后整理。
+课程评分反映当前整组组合代码，而非本人独立完成队友模块。没有验证不同用户页表、多核并发、时钟抢占、完整退出回收或每个寄存器的穷尽动态测试。其他成员章节、Challenge 和截图仍由小组完善。
