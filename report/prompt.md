@@ -1,5 +1,61 @@
 # Lab 4 提示词记录
 
+## 2412439—崔迪
+
+以下两份是四段式整理版。依据实现前的修改范围确认、已提交的四个函数和当时的编译结果整理，供复核和复现。确认记录要求先列出计划，获准后再填写指定区域。
+
+### 一、建立、替换和撤销单页映射
+
+````text
+[PROMPT]
+完成 Lab 4 的 page_insert() 和 page_remove()。先说明两处操作的规格和计划修改位置，获得确认后只在 code/kern/mm/pmm.c 的 LAB4 function1 填空中实现，保留实验标记并署名 2412439。以现有框架和课程检查为依据。
+
+[RELY]
+pmm.h 已声明这两个函数以及 get_pte() 和 tlb_invalidate()，并提供 pte_create()、page2ppn()、pte2page()、page_ref_inc()、page_ref_dec() 及 free_page()。get_pte(pgdir, la, 1) 可按需创建中间页表，失败返回 NULL；传入 0 只查看已存在的路径。PTE_V 表示页表项有效，PTE 的权限来自调用者的 perm；error.h 定义 E_NO_MEM。框架的 check_pgdir() 和课程 PMM 检查会检查映射、权限及物理页引用计数。
+
+[GUARANTEE]
+int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm);
+void page_remove(pde_t *pgdir, uintptr_t la);
+使用现有签名和数据结构。写入范围仅限上述两函数的 LAB4 填空。
+
+[SPECIFICATION]
+page_insert()
+前置条件：pgdir 是有效的页表根的内核虚拟地址，la 由该路径按 4 KiB 页映射，page 是可建立映射的受管理物理页。
+后置条件：成功时叶级 PTE 记录 page 的物理页号和 perm，置有效位，更新受影响的 TLB 翻译并返回 0。
+分支：新映射增加目标页一个引用。重复映射到同一页只更新 PTE，净引用计数不变。改映射到不同页时增加新页引用并移除旧映射，旧页失去最后一个引用时归还。若 get_pte() 返回 NULL，返回 -E_NO_MEM，不增加目标页引用或写入目标叶级映射；中间页表分配的副作用由框架 get_pte() 决定。
+
+page_remove()
+前置条件：pgdir、la 符合同样的页表访问约定。
+后置条件：若有有效映射，清零叶级 PTE 并使对应 TLB 翻译失效，减少物理页一个引用，引用归零时释放物理页。
+分支：页表路径不存在或叶级 PTE 无效时直接返回，不分配页表。保留中间页表供后续使用。
+````
+
+### 二、分配 PCB 与初始化 idle/init
+
+````text
+[PROMPT]
+完成 Lab 4 的 alloc_proc() 和 proc_init()。先列出要修改的位置和行为，获得确认后在 code/kern/process/proc.c 的 LAB4 function2 填空补入本人两函数，保留实验标记并署名 2412439。该填空由两位成员共享，线程创建通过已有的 kernel_thread() 接口接入。
+
+[RELY]
+proc.h 定义 proc_struct、进程状态和 kernel_thread()。kmalloc()、memset()、list_init() 用来初始化 PCB。boot_pgdir_pa 是内核根页表物理地址，bootstack 是启动时使用的内核栈。proc.c 已有 proc_list、hash_list、nr_process、current、idleproc、initproc，以及 init_main()、find_proc() 和 set_proc_name()。创建子线程时，kernel_thread() 以 current 为父线程，成功返回新 PID，并由线程创建路径负责把子线程登记进链表和哈希表。
+
+[GUARANTEE]
+static struct proc_struct *alloc_proc(void);
+void proc_init(void);
+alloc_proc() 供同一文件的 do_fork() 复用；公共头文件和其他函数保持现有接口。
+
+[SPECIFICATION]
+alloc_proc()
+前置条件：内核分配器已初始化，boot_pgdir_pa 有效。
+后置条件：成功时返回尚未登记的 PCB，主体清零，state 为 PROC_UNINIT，pid 为 -1，pgdir 为 boot_pgdir_pa，两个链表节点各自初始化。其他状态由后续创建过程填写。
+分支：内存申请失败返回 NULL。
+
+proc_init()
+前置条件：内存管理已初始化，内核正在启动栈上执行，进程管理子系统尚未启动。
+后置条件：初始化全局链表和 PID 哈希桶。idleproc 使用 PID 0、bootstack 和 PROC_RUNNABLE，设置 need_resched，并成为 current。把 idle 计入进程数，保留普通进程链表给已登记的普通线程。用 kernel_thread() 创建以 init_main 为入口的线程，按返回 PID 找到 initproc 并设定名称。CPU 交接由后续调度完成。
+分支：idle PCB 分配或内核线程创建失败时报告启动错误；按 PID 查询 init 失败时触发断言。队友入口尚未完成时先检查两个源文件的编译，完整启动与评分在合入后进行。
+````
+
 ## 2412852—梁靖泽
 
 依据本地 `../lab2026/_book/lab0.5/2_prompt_engineering.html`、`3_prompt_structure.html` 和 `4_practice_guide.html`，主 agent 先核对真实接口，再采用任务导向的 `[PROMPT]`、`[RELY]`、`[GUARANTEE]`、`[SPECIFICATION]` 四段式结构，描述行为、状态与边界，而非要求照抄算法步骤。

@@ -6,7 +6,8 @@
 |------|------|
 | **实验名称** | Lab 4：进程管理 |
 | **小组成员** | 2412439-崔迪、2412819-李子谦、2412852-梁靖泽 |
-| **完成日期** |  |
+| **代码验收日期** | 2026-11-20 |
+| **Docker 复验日期** | 2026-11-22 |
 
 ### 小组分工
 
@@ -32,36 +33,32 @@
 
 | 成员 | AI 编程工具 | 底层模型 | 备注 |
 |------|------------|---------|------|
-| 2412439-崔迪 |  |  | |
-| 2412819-李子谦 |  |  |  |
-| 2412852-梁靖泽 | Codex CLI（主 agent + 两个代码子 agent） | 本次接口未显示具体模型标识，不推测 | 主 agent 编写提示词、复核和文档，子 agent 实现代码 |
+| 2412439-崔迪 | Claude Code | DeepSeek V4 Flash | 工具和模型由小组补充 |
+| 2412819-李子谦 | Claude Code | DeepSeek V4 Flash | 工具和模型由小组补充 |
+| 2412852-梁靖泽 | Codex CLI（主 agent + 两个代码子 agent） | DeepSeek V4 Flash | 模型由小组补充。主 agent 编写提示词并复核，子 agent 实现代码 |
 
-李子谦使用 Windows WSL2、Ubuntu 24.04.4 LTS / x86_64，RISC-V GCC 10.2.0，QEMU 4.1.1；直接在 WSL 中编译、测试，没有使用 Docker。其余成员环境由本人补充。
+崔迪的两个源文件在 macOS 的 `os-labs-lab-1` 容器中交叉编译。同一容器用于 11 月 22 日的复验，包含 Ubuntu 22.04.5 LTS / aarch64、RISC-V GCC 10.2.0、QEMU 4.1.1 和 GDB 12.1。李子谦的专项验证使用 Windows WSL2、Ubuntu 24.04.4 LTS / x86_64、RISC-V GCC 10.2.0 和 QEMU 4.1.1。
 
-梁靖泽本次使用 WSL / Ubuntu 22.04.5 LTS、RISC-V GCC 15.1.0 和 QEMU 4.1.1，直接在 WSL 验证，没有使用 Docker。默认 QEMU 7.0.0 的 OpenSBI 启动信息显示 Next Address 为零，未进入内核，因此动态验收改用已有 QEMU 4.1.1。GCC 15 对历史框架的类型转换报错，本次只用命令行兼容选项降为警告，不改队友代码或 Makefile。
+梁靖泽的整体联调使用 WSL / Ubuntu 22.04.5 LTS、RISC-V GCC 15.1.0 和 QEMU 4.1.1。该环境的 GCC 兼容选项和 QEMU 版本选择见模块三的调试记录。
 
 ---
 
 ## 三、实验整体逻辑分析
 
-### 2.1 本章节的逻辑主线
+### 3.1 本章节的逻辑主线
 
 Lab4 先完善页映射和虚拟内存管理，再把内核中的执行流组织成线程，最后通过调度和上下文切换让线程真正运行。整体顺序是：
 
-`kern_init → pmm_init → pic_init/idt_init → vmm_init → proc_init → cpu_idle → schedule → proc_run → switch_to`。
+`kern_init → pmm_init → pic_init / idt_init → vmm_init → proc_init → clock_init / intr_enable → cpu_idle → schedule → proc_run → switch_to`。
 
-我负责的是“线程从哪里来、第一次从哪里开始执行”。创建成功只代表线程已经就绪，并不代表创建函数要直接调用线程入口；CPU 交接由调度模块完成。
+三个模块的分界是页映射、线程就绪和 CPU 交接。物理页管理和内核页表为 PCB 与内核栈提供存储，创建路径准备可恢复的现场并把线程置为就绪，调度路径选择目标并让它占用 CPU。
 
-### 2.2 功能的逐步实现
+### 3.2 功能的逐步实现
 
-1. 先有物理页、页表和 `kmalloc()`，才能申请 PCB 与独立内核栈。
+1. 启动阶段建立内核映射。`pmm_init()` 初始化物理页分配，检查页映射的建立、替换与撤销，再初始化 `kmalloc()`，为后续 PCB 与栈的分配做好准备。`vmm_init()` 检查已有的 VMA 管理。
 2. `proc_init()` 将当前执行流登记为 `idleproc`，再通过 `kernel_thread()` 创建 `initproc`。
 3. `kernel_thread()` 准备入口和参数，`do_fork()` 组织 PCB、内核栈、地址空间处理、现场复制及全局登记。任何可失败的准备步骤都在登记之前完成。
-4. 调度模块之后选择新线程；它的 `context.ra` 指向 `forkret`，沿 `forkret → forkrets → __trapret → kernel_thread_entry → fn(arg)` 恢复首次现场。本次专项测试检查这条返回链，但不代替完整调度联调。
-
-### 2.3 调度链路补充（2412852，2026-11-20）
-
-`proc_init()` 已把当前启动现场登记为 idle，并设置调度请求。`cpu_idle()` 观察请求后进入 `schedule()`；后者按进程列表循环选择 runnable，`proc_run()` 在中断保护下更新当前线程、切换 Sv39 页表并刷新 TLB，最后 `switch_to()` 恢复目标栈与返回地址。新线程沿上述首次恢复链进入入口；已有线程则回到它上次调用 `switch_to()` 后的 C 续执行点。创建和运行属于两个阶段，调度器不重新构造 trapframe。
+4. `cpu_idle()` 观察到初始调度请求，通过 `schedule()` 从进程表选择就绪线程。`proc_run()` 更新 `current`、写入 Sv39 的 `satp` 并刷新 TLB，`switch_to()` 恢复目标的栈与返回地址。新线程沿 `forkret → forkrets → __trapret → kernel_thread_entry → fn(arg)` 首次运行。已有线程从它上一次调用 `switch_to()` 的位置继续执行。
 
 ---
 
@@ -71,17 +68,48 @@ Lab4 先完善页映射和虚拟内存管理，再把内核中的执行流组织
 
 **负责人：** 2412439-崔迪
 
-本节由对应成员填写。
+#### 接口与实现
+
+本模块在 `code/kern/mm/pmm.c` 的 `LAB4 function1` 区域完成，署名 `2412439`。
+
+```c
+int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm);
+void page_remove(pde_t *pgdir, uintptr_t la);
+```
+
+| 操作 | 实现与行为规格 |
+|------|----------------|
+| 建立映射 | `get_pte(pgdir, la, 1)` 找到或按需建立通往叶级页表项的路径。成功后增加目标页的引用计数，写入页号和权限，并使该地址的 TLB 翻译失效。 |
+| 同一物理页重复映射 | 抵消本次新增引用，重新写入 PTE 并使 TLB 翻译失效。映射数保持一致，调用者仍可更新权限。 |
+| 替换物理页 | 先增加新页的引用，再调用 `page_remove()` 撤销旧映射，最后写入新 PTE。旧页在最后一个引用撤销后释放。 |
+| 删除映射 | 用 `get_pte(pgdir, la, 0)` 查找已有项。路径不存在或 PTE 无效时直接返回。有效时清零 PTE，先使 TLB 翻译失效，再减少引用并在归零时释放物理页。 |
+| 建立路径失败 | 返回 `-E_NO_MEM`。目标叶级映射与待映射物理页的引用计数保持原值。若上层页表已创建而下一层分配失败，现有 `get_pte()` 可留下已分配的中间页表。 |
+
+删除的是一个虚拟地址的映射。若同一物理页还被别的地址映射，它会继续保留。中间页表仍可供同一路径下的其他映射使用。行为规格和所依赖的接口见[崔迪的提示词整理版](prompt.md#2412439崔迪)。
+
+#### 实现与验证记录
+
+本组先确认只填写崔迪负责的区域，随后实现这两个函数和模块二的两个初始化函数。11 月 11 日在 Docker 中单独编译 `pmm.o` 与 `proc.o`，编译通过，并逐字节核对了两处填空外的框架。该次交叉编译记录没有记载需修复的 AI 生成缺陷。合入后的页表自检、启动阶段的实际别名访问以及课程 PMM 评分，见第五节。
 
 ---
 
 ### 功能模块二：线程创建与首次运行现场
 
-**负责人：** 2412819-李子谦
+#### PCB 分配与进程管理初始化（2412439 崔迪）
 
-本节只包含本人四个函数；`alloc_proc()`、`proc_init()` 的实现与说明由崔迪负责。
+崔迪在 `code/kern/process/proc.c` 的 `LAB4 function2` 区域实现以下两个函数。
 
-#### 模块功能描述
+```c
+static struct proc_struct *alloc_proc(void);
+void proc_init(void);
+```
+
+- `alloc_proc()` 通过 `kmalloc()` 分配 PCB。分配失败返回 `NULL`。成功后清零 PCB，设置 `PROC_UNINIT`、尚未分配的 PID `-1` 和内核根页表物理地址 `boot_pgdir_pa`，并初始化普通链表和 PID 哈希链表节点。该接口也供 `do_fork()` 使用。
+- `proc_init()` 先初始化全局进程链表和 PID 哈希桶。将启动执行流登记为 `idleproc`，使其复用 `bootstack`、使用 PID 0、处于 `PROC_RUNNABLE`，并设置 `need_resched` 和 `current`。idle 计入进程总数，调度时经专门指针访问。随后以 `init_main()` 为入口调用 `kernel_thread()`，用返回的 PID 查出已登记的 `initproc` 并命名。启动阶段资源申请、线程创建或查询失败会进入 panic 或断言。
+
+规格把初始化顺序作为接口约束。必须先建立进程管理结构，再设定 `current`，这样创建路径才能把 idle 设为 init 的父线程。最终进程创建检查核对了两者的 PID、就绪状态、内核栈和初始现场。详见[初始化提示词整理版](prompt.md#2412439崔迪)。
+
+#### 线程创建与首次运行现场（2412819 李子谦）
 
 **需要实现/修改的函数：**
 
@@ -104,73 +132,9 @@ static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);
 
 父线程得到的是新线程 PID，子现场中的 `a0=0` 是为恢复路径准备的返回值，两者不是同一个返回位置。当前阶段线程共享内核页表，但 PCB、内核栈和执行现场仍然各自独立。
 
-#### 最终提示词
+#### 行为规格与 AI 协作
 
-**一、首次现场构造：**
-
-````text
-[PROMPT]
-任务：我负责 Lab4 的线程创建。请先在 code/kern/process/proc.c 中补全 kernel_thread() 和 copy_thread()，把函数和参数准备成线程第一次运行的现场。
-操作要求：请用 apply_patch 直接改真实文件，只补这两个函数和必要的 static 声明，署名 2412819，保留 LAB4 标记。队友的 alloc_proc()、proc_init() 和其他模块别改，也不要新增文件、运行构建或提交 Git。
-输出要求：按下面的真实接口和规格实现，最后说明改了哪里、现场怎样传递，还有哪些尚未验证。
-
-[RELY]
-请先读 proc.c、proc.h、trap.h、process/entry.S 和 trapentry.S。struct trapframe 由 gpr、status、epc、badvaddr、cause 组成，gpr 有 s0、s1、a0、sp 等字段；proc_struct 有 kstack、tf、context，context 保存 ra、sp、s0–s11。
-KSTACKSIZE 是内核栈大小。已有 memset()、read_csr(sstatus)、SSTATUS_SPP/SPIE/SIE、do_fork()、forkret()。kernel_thread_entry 从 s0 取函数、s1 取参数；forkrets 从传入的 tf 恢复现场。pmm.h 定义 CLONE_VM=0x00000100，表示共享地址空间。
-
-[GUARANTEE]
-int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags);
-static void copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf);
-允许必要的文件内前置声明，不改公共结构和接口。
-
-[SPECIFICATION]
-## kernel_thread
-Pre-Condition：当前线程有效，fn 是有效内核函数，arg 可为 NULL。
-Post-Condition：准备清零的临时 trapframe，保留函数和参数，入口指向 kernel_thread_entry；经 do_fork(clone_flags | CLONE_VM, 0, &tf) 返回 PID 或原错误码，不留下指向局部 tf 的长期引用。
-Requirements：status 保留其他位，置 SPP/SPIE、清 SIE，让新线程从 S 态入口运行；本函数只创建，不直接调用 fn。
-
-## copy_thread
-Pre-Condition：proc 已有 KSTACKSIZE 字节的独立内核栈；tf 有效；esp 为 0 或调用者提供的合法栈指针。
-Post-Condition：在新内核栈顶部保存 tf 的独立副本，a0 置 0，context 从清零状态设置 ra=forkret、sp=新 tf 地址，原 tf 不变。
-Case 1：esp=0 时，恢复用的 gpr.sp 指向新 tf，不能继续用父线程的栈。
-Case 2：esp 非零时，gpr.sp 使用该值。
-Requirements：按真实结构大小计算位置，保持 16 字节栈对齐，不增加另一套返回汇编。
-````
-
-**二、资源申请、登记与失败清理：**
-
-````text
-[PROMPT]
-任务：我负责 Lab4 线程创建的另一部分。请在 code/kern/process/proc.c 中补全 copy_mm() 和 do_fork()，把 PCB、内核栈、首次现场和进程登记串起来。
-操作要求：请用 apply_patch 直接修改文件，只补这两个函数及必要的 static 声明，署名 2412819，保留 LAB4 标记。已有的 kernel_thread()、copy_thread() 和队友代码不要改，不新增文件，不运行构建或提交 Git。
-输出要求：以真实代码和下面的规格为准，说明资源申请、失败回收和登记顺序，不把未跑的测试写成通过。
-
-[RELY]
-请读 proc.c、proc.h、vmm.h、sync.h、error.h。proc_struct 的 parent、mm、pgdir、tf、context、list_link、hash_link 用于父子关系、地址空间、现场和登记；pgdir 是物理地址。
-已有 alloc_proc()、setup_kstack()、put_kstack()、copy_thread()、get_pid()、hash_proc()、kfree()、wakeup_proc()、list_add()，以及 current、proc_list、nr_process、MAX_PROCESS、boot_pgdir_pa。local_intr_save/restore 保存和恢复原中断状态。
-alloc_proc() 成功时 PCB 已清零，state=PROC_UNINIT、pid=-1、pgdir=boot_pgdir_pa；失败返回 NULL。只创建内核线程，current->mm 应为 NULL；pmm.h 中 CLONE_VM=0x00000100，本阶段不复制用户地址空间。
-
-[GUARANTEE]
-static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);
-int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf);
-辅助函数只保留文件内作用域，不改公共结构。
-
-[SPECIFICATION]
-## copy_mm
-Pre-Condition：current 和新 proc 有效，proc 尚未登记。
-Post-Condition：内核线程共享内核页表，proc->mm 保持 NULL，pgdir 为 boot_pgdir_pa，返回 0；不分配或复制用户地址空间。
-Case：current->mm 非 NULL 时返回 -E_INVAL，明确拒绝本实验未支持的情况，不把它当作成功。
-
-## do_fork
-Pre-Condition：单核环境，current 有效，tf 有效，进程管理结构已初始化；stack 为 0 或合法栈指针。
-Post-Condition：成功返回唯一正 PID，parent=current；PCB、内核栈和首次现场准备完整后，才登记进程链表、PID 哈希和计数，并变为 PROC_RUNNABLE；不改变 current，不在这里调度。
-Case 1：进程数达到 MAX_PROCESS，返回 -E_NO_FREE_PROC，不申请资源。
-Case 2：PCB 或内核栈申请失败，返回 -E_NO_MEM，已申请的资源按逆序释放。
-Case 3：copy_mm 失败，返回它的错误码，回收内核栈和 PCB。
-Requirements：失败时链表、哈希和进程数不变，不释放父线程或内核共享页表；PID 分配、登记、计数及唤醒在保存中断状态的临界区完成，退出后恢复原状态。
-````
-
-两份提示词原文也保存在 [prompt.md](prompt.md)，分别发送给不继承本次聊天记录的子 agent。子 agent 根据提示词读取工程、修改对应函数，主 agent 复核并运行测试。
+李子谦把任务拆成首次现场构造和资源管理两部分。第一份规格规定 `kernel_thread()` 的入口、参数和状态位，以及 `copy_thread()` 的独立栈、16 字节对齐和恢复地址。第二份规格要求 `copy_mm()` 处理共享内核页表的情形，`do_fork()` 在完成资源申请后再登记线程，遇到 PCB、内核栈或地址空间处理失败时按已申请资源回收。两份原文分别发送给子 agent，主 agent 随后复核与验证。详见[李子谦的提示词记录](prompt.md#2412819李子谦)。
 
 #### 实现迭代过程
 
@@ -183,7 +147,7 @@ Requirements：失败时链表、哈希和进程数不变，不释放父线程�
 
 **问题解决策略：**
 
-- 修正提示词的真实依赖，明确共享地址空间标志；重新发送修正版，使 `kernel_thread()` 使用 `clone_flags | CLONE_VM`。上面保留的是实际发送并执行的最终版本。
+- 核对 `pmm.h` 后修正依赖说明，明确共享地址空间标志，再发送修正版，使 `kernel_thread()` 使用 `clone_flags | CLONE_VM`。提示词记录保留了实际发送和执行的最终版本。
 - 用经过允许的临时副本做线程创建专项测试。仅在副本中添加测试入口和分配失败注入，直接检查实际四个函数；没有给工作区补上调度器或更改队友函数。
 
 **最终结果：**
@@ -191,7 +155,7 @@ Requirements：失败时链表、哈希和进程数不变，不释放父线程�
 - 四个函数所在源文件交叉编译通过。
 - QEMU 4.1.1 下，64、70、128、256 MiB 四种配置均通过 11 组创建专项检查。
 - 真实恢复链成功在子线程内核栈上进入指定函数并正确传参。
-- 正式内核的整体链接、调度联调及课程评分，仍需等待调度模块完成。未把专项测试写成整组实验已经通过。
+- 11 月 12 日的测试覆盖线程创建和首次进入，整组内核的链接、调度和评分随后在 11 月 20 日验收。
 
 **关键改进点总结：**
 
@@ -225,7 +189,7 @@ void switch_to(struct context *from, struct context *to);
 
 前置条件包括单核环境、有效的 `current/idleproc`、完整进程列表、runnable 目标、页对齐的 Sv39 根页表物理地址以及合法 context。后置条件要求选择策略、请求标记、运行计数、当前线程、页表翻译和寄存器现场一致；空列表、全非 runnable、选中自身、新线程首次进入和已有线程恢复分别列为分支。
 
-完整逐函数的 Pre-Condition、Post-Condition、Case 和 Requirements，以及实际发送的两份四段式提示词见 [提示词记录](prompt.md)的梁靖泽章节。主 agent 先读 README 分工、Lab 0.5 提示词教程及真实接口，再将 C 调度链路交给 Ptolemy，汇编现场交给 Mill；写入范围不重叠，子 agent 不编写文档。两者完成后由主 agent 复核和整理本文。
+主 agent 先核对 Lab 0.5 指导和工程接口，再将 C 调度链路交给 Ptolemy，汇编上下文切换交给 Mill，随后统一复核。逐函数的前置条件、后置条件、分支行为以及两份实际发送的原文见[梁靖泽的提示词记录](prompt.md#2412852梁靖泽)。
 
 #### 上下文布局与中断恢复
 
@@ -245,17 +209,37 @@ void switch_to(struct context *from, struct context *to);
 
 ---
 
-### Challenge：中断开关与分页模式思考题
+### Challenge 中断开关与分页模式
 
-由小组共同讨论、汇总，本人本次不代填。
+#### 1. 中断开关与嵌套临界区
+
+`local_intr_save(intr_flag)` 通过 `__intr_save()` 读取 `sstatus.SIE`。若原先开启 S 态中断，`intr_disable()` 清除该位，同时返回 `true` 记录原状态。若原先已关闭，则返回 `false`。退出临界区时，`local_intr_restore(intr_flag)` 只在标记为 `true` 时调用 `intr_enable()`，通过置位 SIE 恢复原来的开启状态。若标记为 `false`，则保持关闭。这个约定要求临界区中的代码维持中断屏蔽状态。对应实现见 [sync.h](../code/kern/sync/sync.h) 和 [intr.c](../code/kern/driver/intr.c)。
+
+以 `schedule()` 调用 `proc_run()` 为例，若外层进入时中断开启，外层记录 `true` 并关闭中断。内层进入时看到中断已关闭，记录 `false`，因此内层退出时仍保持关闭，最后由外层恢复。线程切换后，旧线程须等自身再次获得 CPU 才会沿原调用链执行恢复。这是单个 hart 上的中断保护，多核之间访问共享数据时还需要跨核同步。
+
+#### 2. 比较 Sv32、Sv39、Sv48
+
+三种模式都以 4 KiB 为基本页大小，页内偏移为 12 位。遍历从 `satp` 指定的根页表开始，按虚拟页号从高到低索引，遇到叶级映射后形成物理地址。支持的大页可在更高层结束遍历。各模式的索引宽度和表项大小如下。参考 [RISC-V 特权架构规范](https://docs.riscv.org/reference/isa/v20260120/priv/supervisor.html)。
+
+| 模式 | 架构 | 有效虚拟地址位数 | VPN 拆分 | 页表层数 | 每级表项数 × 表项字节数 | 支持的页大小 |
+|------|------|-----------------|----------|----------|-------------------------|--------------|
+| Sv32 | RV32 | 32 | 10 + 10 | 2 | 1024 × 4 B | 4 KiB、4 MiB |
+| Sv39 | RV64 | 39 | 9 + 9 + 9 | 3 | 512 × 8 B | 4 KiB、2 MiB、1 GiB |
+| Sv48 | RV64 | 48 | 9 + 9 + 9 + 9 | 4 | 512 × 8 B | 4 KiB、2 MiB、1 GiB、512 GiB |
+
+Sv39 要求虚拟地址的位 63–39 等于位 38，Sv48 要求位 63–48 等于位 47。Sv48 比 Sv39 多一级索引，扩大了可用的虚拟地址范围，也增加了逐级查找和按需分配的潜在成本。参考 [RISC-V 特权架构规范](https://docs.riscv.org/reference/isa/v20260120/priv/supervisor.html)。
+
+**两段代码为何相似。** 本实验的 `get_pte()` 为普通 4 KiB 映射走 Sv39 路径。第一段按 `PDX1(la)` 访问根页表，第二段按 `PDX0(la)` 访问下一层。两段都在表项未建立时根据 `create` 决定是否分配页表页。创建成功后设置引用计数、清零新页并写入指向它的目录项，最后用 `PTX(la)` 返回叶级表项地址。Sv32 的普通页路径只需一次这样的下降，Sv48 则需要三次。代码对应 [pmm.c](../code/kern/mm/pmm.c) 和 [mmu.h](../code/kern/mm/mmu.h)。
+
+**是否拆分查找和分配。** 现有 `create` 开关让两种操作共享一套遍历，对当前 Lab 4 足够简洁。调用者需要留意副作用，例如第二次分配失败时第一层可能已经挂接。若要扩展到更多分页模式，可保留共用的遍历逻辑，对外用不同名字表达只读查找和确保路径存在，并单独说明创建失败时由谁保留或回收已分配的页表页。本实验的思考题只讨论接口设计。
 
 ---
 
 ## 五、测试与验证
 
-以下为李子谦负责部分的实际检查，日期为 2026-11-12。
+### 5.1 线程创建专项验证（2026-11-12）
 
-本小节保留历史结果；其“等待调度模块”的描述仅对应当日。2026-11-20 的补充验收见下表，不回写历史记录。
+李子谦在调度模块合入前验证线程创建和首次运行现场。
 
 | 检查项 | 结果及覆盖范围 |
 |------|----------------|
@@ -265,46 +249,70 @@ void switch_to(struct context *from, struct context *to);
 | 成功创建 | 正 PID、父子关系、独立内核栈、共享内核页表、链表和哈希登记、就绪状态、原中断状态恢复 |
 | 错误处理 | 进程数上限、PCB 申请失败、栈申请失败、不支持的用户 mm；核对返回码、释放次数、空闲页与登记状态 |
 | 首次恢复 | 实际执行 `forkret/forkrets/sret/kernel_thread_entry`，验证函数、参数和子栈 |
-| 全量调度与课程评分 | 尚未执行，等待其他模块合入后共同验收 |
 
 **测试方法与边界：**
 
 测试在 `/tmp/lab4-2412819-test-*` 临时副本中进行，直接编译实际四个函数。链接包装只用于控制分配失败和统计回收；测试入口通过现有 `forkret()` 进入新线程，不实现 `schedule()`、`proc_run()` 或 `switch_to()`。因此证明了创建和首次返回现场，但不证明完整的线程切换、轮转调度或多核并发正确性。256 MiB 配置仍受框架 128 MiB 管理上限约束。
 
-真实命令、输出和临时测试代码统一保存在 [2412819-lab4-tests.txt](logs/2412819-lab4-tests.txt)，不新增永久验证脚本。临时副本测试后删除。待队友模块完成后，再用课程原有 `make`、`make qemu`、`make grade` 共同验收；本报告不填写尚未得到的分数。
+实际命令、输出和临时夹具源码保存在[创建专项测试日志](logs/2412819-lab4-tests.txt)。
 
-### 梁靖泽补充验收（2026-11-20）
+### 5.2 小组整体验收（2026-11-20）
 
 | 检查项 | 真实结果与限制 |
 |------|------|
-| 默认交叉构建 | GCC 15 在既有 `kmalloc.c` 类型转换处报错；不修改该非本人模块 |
-| 命令行兼容构建 | 将历史类型诊断降为警告后，全内核编译、链接、镜像生成通过；产物位于 `/tmp` |
+| 默认交叉构建 | GCC 15 在框架 `kmalloc.c` 的类型转换处报错 |
+| 命令行兼容构建 | 降低既有类型诊断级别后，全内核编译、链接及镜像生成通过 |
 | 调度模拟 | 2562 个组合及自身目标、直接切换、高位根页表物理地址、嵌套中断恢复通过；不是真实硬件切换 |
-| QEMU 4.1.1 正式镜像 | idle → init 首次运行成功，随后因框架 `do_exit` 占位进入预期 panic |
-| 课程原有注入与评分 | 临时副本调用 `tools/inject.py`、`tools/grade.sh -v`，PMM / Process Create / Schedule 全部 OK，总分 30/30 |
-| 修改边界 | 代码仅本人三个文件的 function3 区域；未改队友函数、Makefile、注入器或评分代码 |
+| QEMU 4.1.1 正式镜像 | 从 idle 切换到 PID 1 的 init，打印名称与问候。init 返回后进入框架 `do_exit()` 占位的 panic |
+| 课程原有注入与评分 | 临时副本调用 `tools/inject.py`、`tools/grade.sh -v`，PMM、Process Create、Schedule 各得 10 分，总分 **30/30** |
 
-默认 QEMU 7 的启动失败及沙箱端口失败也保留在日志中，不将失败尝试描述成通过。课程评分是当前组合代码的验收证据，不代表本人独立完成队友模块；正式报告公共内容、其他成员章节及 Challenge 仍由小组完善。
+PMM 检查覆盖映射替换、权限写入、同页重复映射、引用计数和重复删除。Process Create 检查 idle/init 的 PID、就绪状态和初始现场，Schedule 检查两个测试线程均能运行。这是三人代码合入后的验收记录。GCC 兼容选项及早期 QEMU、端口失败的输出也随日志保留。详见[整体联调与课程评分日志](logs/2412852-lab4-tests.txt)。
 
-**测试截图：**
+### 5.3 Docker 复验与截图（2026-11-22）
 
-由组长在最终验收时统一补充，本次不处理。
+使用 GCC 10.2.0 和 QEMU 4.1.1，在 `os-labs-lab-1` 容器的 `/workspace` 内重建内核。生成 `bin/kernel` 和 `bin/ucore.img`，启动打印页表和 VMA 自检结果以及 `this initproc, pid = 1, name = "init"`。课程 `make grade` 退出码为 0，三个评分项目均为 OK，总分 **30/30**。正式镜像在 init 返回后进入框架的退出占位，日志中的 `process exit!!.` 是该路径的提示。
+
+在宿主终端依次运行以下命令可复现这三项检查。
+
+```sh
+docker exec os-labs-lab-1 sh -lc 'cd /workspace && make clean && make && ls -lh bin/kernel bin/ucore.img'
+docker exec os-labs-lab-1 sh -lc 'cd /workspace && timeout 8s make qemu'
+docker exec os-labs-lab-1 sh -lc 'cd /workspace && make grade'
+```
+
+![内核构建产物终端截图](images/2412439-lab4-build.png)
+
+图 1. 构建结束后的产物列表。ELF 文件 `bin/kernel` 约 234 KiB，裸镜像 `bin/ucore.img` 约 37 KiB。
+
+![QEMU 启动与 initproc 首次执行终端截图](images/2412439-lab4-boot.png)
+
+图 2. QEMU 启动后通过页表和 VMA 自检，PID 1 的 `initproc` 打印了名称和问候。画面末尾保留了 `init` 返回后进入框架退出占位的输出。
+
+![PMM、进程创建和调度课程评分终端截图](images/2412439-lab4-grade.png)
+
+图 3. PMM、Process Create、Schedule 三项均为 `OK`，总分 `30/30`。
 
 ---
 
 ## 六、实验总结与收获
 
-### 对操作系统的理解
+### 6.1 实验知识点与 OS 原理
 
-1. **本部分的知识点及原理联系：** PCB 管理线程身份和状态；内核栈承载独立的调用现场；context 服务于线程切换，trapframe 服务于 Trap 返回，首次运行时两者需要预先配合。共享内核地址空间不等于共享栈，`copy_mm()` 也不等于复制全部物理内存。资源生命周期和失败回滚与 OS 的资源管理原则一致，而本实验的实现范围只是单核内核线程。
-2. **尚未对应上的重要知识点：** 用户进程的地址空间复制、写时复制、完整的退出与等待回收、多核同步和复杂调度策略。本次没有实现这些功能，不能把 `do_fork()` 的名字理解成已经实现完整的用户态 fork。
+| 实验知识点 | 对应 OS 原理 | 本实验的范围 |
+|-----------|-------------|--------------|
+| PTE、引用计数与 TLB | 分页把虚拟地址映射到物理页。撤销映射时必须维护共享页的生命周期，并处理缓存的地址翻译。 | 通过 Sv39 的普通页路径建立、替换、撤销映射。所有实验线程共享内核页表。 |
+| PCB、PID 与内核栈 | 控制块描述线程的身份、状态和资源。独立内核栈保存每条内核执行流的调用现场。 | idle 复用启动栈，后续线程独立分配栈。在完成资源申请后登记线程，创建失败时清理已申请资源。 |
+| trapframe 与 context | Trap 返回要重建被打断的执行现场，线程切换按 ABI 保存跨调用需要保留的寄存器。 | 新线程通过构造好的 context 进入 `forkret`，再恢复 trapframe；已有线程直接恢复到上一次切换点。 |
+| 就绪选择与中断保护 | 调度决定下一条执行流；上下文切换完成 CPU 交接。临界区维护当前线程、页表和现场的一致性。 | 单核环境按进程链表循环选择就绪线程，切换期间保留原 SIE 状态。 |
 
-### AI 协作开发的经验
+### 6.2 本实验未覆盖的 OS 知识点
 
-先把目标文件、已有接口和行为规格写清楚，再让 AI 修改真实文件。两个紧密相关的函数可以放在一份提示词中，但不同阶段分开提出，便于检查现场与资源处理。生成后重点核对栈地址、状态位、错误路径和修改边界，测试还应主动制造失败，而不是只看成功启动。依赖说明写错时要回到工程修正，不能让 AI 按错误假设继续实现。
+- 用户态进程的地址空间复制与隔离、写时复制、按需调页和换页。
+- 完整的退出与等待协议，包括僵尸进程和资源回收。
+- 多核同步、跨核 TLB 失效、时钟抢占、优先级策略和负载均衡。
 
-### 梁靖泽补充总结
+### 6.3 AI 协作开发的经验
 
-循环调度是一种选择规则，上下文切换是 CPU 执行权交接，两者需要由 `current`、页表和栈共同保持一致。保存 `ra/sp/s0–s11` 的依据来自 ABI 与真实结构，而不是照搬其他架构的模板；临界区恢复也必须考虑线程以后回到自己的栈，而非假定调用立即返回。任务提示词应给出真实依赖和分支行为，再用互不重叠的写入范围并行实现，最终由主 agent 统一复核和记录证据。本次未实现用户地址空间、多核同步、时钟抢占或完整进程退出。
+四段式提示词把文件范围、框架依赖、接口和分支行为写清楚。共享 `proc.c` 时逐函数约定修改边界。评审页映射时核对旧映射和引用计数，评审线程创建时核对栈位置、状态位与错误清理，评审调度时核对 ABI 布局和临界区。李子谦对 `CLONE_VM` 的修订说明依赖要用实际头文件核验。专项测试可以隔离依赖并覆盖失败分支，完整验收则用课程测试确认各模块连起来后的行为。
 
 ---
