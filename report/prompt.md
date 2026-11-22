@@ -2,10 +2,6 @@
 
 ## 2412852—梁靖泽
 
-依据本地 `../lab2026/_book/lab0.5/2_prompt_engineering.html`、`3_prompt_structure.html` 和 `4_practice_guide.html`，主 agent 先核对真实接口，再采用任务导向的 `[PROMPT]`、`[RELY]`、`[GUARANTEE]`、`[SPECIFICATION]` 四段式结构，描述行为、状态与边界，而非要求照抄算法步骤。
-
-以下两份原文于 2026-11-20 分别发送给不继承聊天历史的子 agent Ptolemy 和 Mill。两者写入范围互不重叠：前者负责 C 调度链路，后者负责汇编上下文。代码完成后，主 agent 复核、验证并整理本文和报告；子 agent 不负责文档。不涉及队友函数、Challenge 或 Git 提交。
-
 ### 一、单核线程调度链路（Ptolemy）
 
 ````text
@@ -68,8 +64,6 @@ Requirements：严格按 proc.h 布局使用 RV64 64 位访存；不能漏保存
 ````
 
 ## 2412819—李子谦
-
-负责线程创建与首次运行现场。以下两份提示词分别用于现场构造和资源管理，原文发送给子 agent；只修改本人四个函数，不代写队友模块。
 
 ### 一、构造内核线程的首次现场
 
