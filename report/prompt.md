@@ -56,7 +56,7 @@ proc_init()
 
 ## 2412852—梁靖泽
 
-### 一、单核线程调度链路（Ptolemy）
+### 一、单核线程调度链路
 
 ````text
 [PROMPT]
@@ -93,7 +93,7 @@ Case 2：目标不同，current、satp、TLB、寄存器上下文切换保持一
 Requirements：satp 使用 64 位模式位，不能截断物理地址或沿用 Sv32 lsatp；TLB 刷新发生在页表切换后和目标现场执行前；不改 runs（由 schedule 负责），不保存 trapframe 或新增栈切换入口。
 ````
 
-### 二、RV64 上下文保存与恢复（Mill）
+### 二、RV64 上下文保存与恢复
 
 ````text
 [PROMPT]
