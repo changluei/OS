@@ -93,7 +93,7 @@ void page_remove(pde_t *pgdir, uintptr_t la);
 
 #### 最终提示词
 
-##### 页映射
+##### 2412439 崔迪 · 页映射
 
 ````text
 [PROMPT]
@@ -155,14 +155,14 @@ static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);
 
 **功能说明**
 
-##### PCB 分配与进程管理初始化
+##### PCB 分配与进程管理初始化（2412439 崔迪）
 
 - `alloc_proc()` 通过 `kmalloc()` 分配 PCB。分配失败返回 `NULL`。成功后清零 PCB，设置 `PROC_UNINIT`、尚未分配的 PID `-1` 和内核根页表物理地址 `boot_pgdir_pa`，并初始化普通链表和 PID 哈希链表节点。该接口也供 `do_fork()` 使用。
 - `proc_init()` 先初始化全局进程链表和 PID 哈希桶。将启动执行流登记为 `idleproc`，使其复用 `bootstack`、使用 PID 0、处于 `PROC_RUNNABLE`，并设置 `need_resched` 和 `current`。idle 计入进程总数，调度时经专门指针访问。随后以 `init_main()` 为入口调用 `kernel_thread()`，用返回的 PID 查出已登记的 `initproc` 并命名。启动阶段资源申请、线程创建或查询失败会进入 panic 或断言。
 
 初始化顺序需要明确：先建立进程管理结构，再设置 `current=idleproc`，之后创建的 init 才能正确记录父线程。
 
-##### 线程创建与首次运行现场
+##### 线程创建与首次运行现场（2412819 李子谦）
 
 - `kernel_thread()` 将临时 trapframe 清零，用 `s0/s1` 保存函数和参数，`epc` 指向 `kernel_thread_entry`。设置 `SPP/SPIE`、清除 `SIE`，并将 `clone_flags | CLONE_VM` 交给 `do_fork()`，自身不执行线程函数。
 - `copy_thread()` 在新内核栈顶部按 16 字节对齐保存独立的 trapframe，子现场的 `a0=0`；`esp=0` 时使用新现场地址作为恢复栈，否则使用传入的栈指针。清零 context，再设置 `ra=forkret`、`sp=新 tf 地址`，不保留指向父栈局部变量的引用。
@@ -173,7 +173,7 @@ static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);
 
 #### 最终提示词
 
-##### PCB 分配与初始化
+##### 2412439 崔迪 · PCB 分配与初始化
 
 ````text
 [PROMPT]
@@ -199,7 +199,7 @@ proc_init()
 分支：idle PCB 分配或内核线程创建失败时报告启动错误；按 PID 查询 init 失败时触发断言。队友入口尚未完成时先检查两个源文件的编译，完整启动与评分在合入后进行。
 ````
 
-##### 首次现场构造
+##### 2412819 李子谦 · 首次现场构造
 
 ````text
 [PROMPT]
@@ -230,7 +230,7 @@ Case 2：esp 非零时，gpr.sp 使用该值。
 Requirements：按真实结构大小计算位置，保持 16 字节栈对齐，不增加另一套返回汇编。
 ````
 
-##### 资源申请、登记与失败清理
+##### 2412819 李子谦 · 资源申请、登记与失败清理
 
 ````text
 [PROMPT]
@@ -321,7 +321,7 @@ void switch_to(struct context *from, struct context *to);
 
 #### 最终提示词
 
-##### 单核线程调度链路
+##### 2412852 梁靖泽 · 单核线程调度链路
 
 ````text
 [PROMPT]
@@ -358,7 +358,7 @@ Case 2：目标不同，current、satp、TLB、寄存器上下文切换保持一
 Requirements：satp 使用 64 位模式位，不能截断物理地址或沿用 Sv32 lsatp；TLB 刷新发生在页表切换后和目标现场执行前；不改 runs（由 schedule 负责），不保存 trapframe 或新增栈切换入口。
 ````
 
-##### RV64 上下文保存与恢复
+##### 2412852 梁靖泽 · RV64 上下文保存与恢复
 
 ````text
 [PROMPT]
@@ -402,7 +402,7 @@ Requirements：严格按 proc.h 布局使用 RV64 64 位访存；不能漏保存
 
 ### Challenge 1：中断开关与嵌套临界区
 
-**负责人：** 小组共同完成
+**负责人：** 2412819-李子谦
 
 `local_intr_save(intr_flag)` 通过 `__intr_save()` 读取 `sstatus.SIE`。若原先开启 S 态中断，`intr_disable()` 清除该位，同时返回 `true` 记录原状态。若原先已关闭，则返回 `false`。退出临界区时，`local_intr_restore(intr_flag)` 只在标记为 `true` 时调用 `intr_enable()`，通过置位 SIE 恢复原来的开启状态。若标记为 `false`，则保持关闭。这个约定要求临界区中的代码维持中断屏蔽状态。对应实现见 [sync.h](../code/kern/sync/sync.h) 和 [intr.c](../code/kern/driver/intr.c)。
 
@@ -412,7 +412,7 @@ Requirements：严格按 proc.h 布局使用 RV64 64 位访存；不能漏保存
 
 ### Challenge 2：比较 Sv32、Sv39、Sv48
 
-**负责人：** 小组共同完成
+**负责人：** 2412852-梁靖泽
 
 三种模式都以 4 KiB 为基本页大小，页内偏移为 12 位。遍历从 `satp` 指定的根页表开始，按虚拟页号从高到低索引，遇到叶级映射后形成物理地址。支持的大页可在更高层结束遍历。各模式的索引宽度和表项大小如下。参考 [RISC-V 特权架构规范](https://docs.riscv.org/reference/isa/v20260120/priv/supervisor.html)。
 
