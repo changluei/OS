@@ -14,7 +14,7 @@
 | 成员 | 实现范围 | 验证与报告 |
 | --- | --- | --- |
 | 2412439 崔迪 | **模块二 · 创建并加载第一个用户进程**。负责 `alloc_proc`、`proc_init`、`kernel_thread` 的适配，以及 `init_main`、`user_main`、`kernel_execve`、`do_execve`、`load_icode` 和 `do_wait`。 | 覆盖 `hello`、`testbss` 和 `waitpid` 回收。负责 **Challenge 2**，说明用户程序何时预加载，以及与常用操作系统加载方式的区别。 |
-| 2412819 李子谦 | **模块三 · 复制用户进程**。负责 `do_fork`、`copy_mm`、`dup_mmap` 和 `copy_range`。 | 覆盖 `forktest`、`forktree`，验证父子返回值、内存隔离和失败清理。若选做 **Challenge 1**，由李子谦负责整项 COW 实现、测试和设计报告。 |
+| 2412819 李子谦 | **模块三 · 复制用户进程**和**Challenge 1 · 写时复制（COW）**。负责 `do_fork`、`copy_mm`、`dup_mmap`、`copy_range` 以及 COW 的完整实现。 | 覆盖 `forktest`、`forktree`，验证父子返回值、内存隔离和失败清理。负责 COW 测试用例及设计报告，说明共享页和私有页的状态转换。 |
 | 2412852 梁靖泽 | **模块一 · 用户态系统调用**和**模块四 · 其余系统调用**。负责 `exception_handler`、`syscall` 和全部 `sys_*` 封装，以及 `do_exit`、`do_yield`、`do_kill`。 | 覆盖 `exit`、`badarg`、`yield`、`spin`、`waitkill`。负责**双重 GDB 分支任务**，跟踪 `ecall`、`sret` 和 QEMU TCG。 |
 
 每个模块和 Challenge 由一位成员负责实现、验证和报告。分工按实现、测试和调试的总工作量划分。
