@@ -118,6 +118,10 @@ void interrupt_handler(struct trapframe *tf) {
         break;
     case IRQ_S_TIMER:
         clock_set_next_event();
+        //lab5 function4 2412852
+        if (current != NULL && !trap_in_kernel(tf)) {
+            current->need_resched = 1;
+        }
         ticks++;
         if (ticks % TICK_NUM == 0) {
             print_ticks();
@@ -161,8 +165,20 @@ static uintptr_t exception_instruction_length(uintptr_t epc) {
 }
 
 void exception_handler(struct trapframe *tf) {
+    //lab5 function1 2412852 update exception_handler
+    if (!trap_in_kernel(tf)) {
+        if (tf->cause == CAUSE_USER_ECALL) {
+            tf->epc += 4;
+            syscall();
+        }
+        else {
+            print_trapframe(tf);
+            do_exit(-E_FAULT);
+        }
+        return;
+    }
+
     switch (tf->cause) {
-    //lab5 function1 YOUR CODE update exception_handler
     case CAUSE_ILLEGAL_INSTRUCTION:
         cprintf("Illegal instruction at 0x%016lx\n", tf->epc);
         tf->epc += exception_instruction_length(tf->epc);
@@ -211,19 +227,25 @@ void trap(struct trapframe *tf)
         current->tf = tf;
 
         bool in_kernel = trap_in_kernel(tf);
+        // Service interrupts before terminating the interrupted process.
+        if (!in_kernel && (intptr_t)tf->cause >= 0 && (current->flags & PF_EXITING))
+        {
+            do_exit(-E_KILLED);
+        }
 
         trap_dispatch(tf);
 
         current->tf = otf;
         if (!in_kernel)
         {
+            if (current->need_resched && !(current->flags & PF_EXITING))
+            {
+                schedule();
+            }
+            // Another process may have requested termination during schedule().
             if (current->flags & PF_EXITING)
             {
                 do_exit(-E_KILLED);
-            }
-            if (current->need_resched)
-            {
-                schedule();
             }
         }
     }

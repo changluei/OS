@@ -5,6 +5,7 @@
 #include <memlayout.h>
 #include <mmu.h>
 #include <pmm.h>
+#include <proc.h>
 #include <sbi.h>
 #include <dtb.h>
 #include <stdio.h>
@@ -622,4 +623,31 @@ static int get_pgtable_items(size_t left, size_t right, size_t start,
         return perm;
     }
     return 0;
+}
+
+//lab5 function1 2412852
+void print_pgdir(void)
+{
+    struct mm_struct *mm = current->mm;
+    if (mm == NULL)
+    {
+        return;
+    }
+
+    cprintf("User page mappings for pid %d\n", current->pid);
+    list_entry_t *list = &mm->mmap_list;
+    for (list_entry_t *entry = list_next(list); entry != list; entry = list_next(entry))
+    {
+        struct vma_struct *vma = le2vma(entry, list_link);
+        for (uintptr_t va = vma->vm_start; va < vma->vm_end; va += PGSIZE)
+        {
+            pte_t *pte = get_pte(mm->pgdir, va, 0);
+            if (pte != NULL && (*pte & (PTE_V | PTE_U)) == (PTE_V | PTE_U))
+            {
+                cprintf("  %08lx %c%c%c\n", (unsigned long)va,
+                        (*pte & PTE_R) ? 'r' : '-', (*pte & PTE_W) ? 'w' : '-',
+                        (*pte & PTE_X) ? 'x' : '-');
+            }
+        }
+    }
 }

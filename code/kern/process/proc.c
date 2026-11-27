@@ -664,8 +664,103 @@ bad_fork_cleanup_proc:
     return ret;
 }
 
-//lab5 function4 YOUR CODE
+//lab5 function4 2412852
+static void wake_waiting_parent(struct proc_struct *parent)
+{
+    if (parent->state == PROC_SLEEPING && parent->wait_state == WT_CHILD)
+    {
+        wakeup_proc(parent);
+    }
+}
 
+int do_exit(int error_code)
+{
+    if (current == idleproc || current == initproc)
+    {
+        panic("idle and init cannot exit");
+    }
+
+    intr_disable();
+    struct mm_struct *mm = current->mm;
+    if (mm != NULL)
+    {
+        current->mm = NULL;
+        current->pgdir = boot_pgdir_pa;
+        lsatp(boot_pgdir_pa);
+        flush_tlb();
+        if (mm_count_dec(mm) == 0)
+        {
+            exit_mmap(mm);
+            put_pgdir(mm);
+            mm_destroy(mm);
+        }
+    }
+
+    current->exit_code = error_code;
+    current->state = PROC_ZOMBIE;
+    wake_waiting_parent(current->parent);
+
+    if (current->cptr != NULL)
+    {
+        struct proc_struct *oldest = current->cptr;
+        for (struct proc_struct *child = current->cptr; child != NULL; child = child->optr)
+        {
+            oldest = child;
+            child->parent = initproc;
+            if (child->state == PROC_ZOMBIE)
+            {
+                wake_waiting_parent(initproc);
+            }
+        }
+        oldest->optr = initproc->cptr;
+        if (initproc->cptr != NULL)
+        {
+            initproc->cptr->yptr = oldest;
+        }
+        initproc->cptr = current->cptr;
+        current->cptr = NULL;
+    }
+
+    schedule();
+    panic("zombie process resumed");
+}
+
+int do_yield(void)
+{
+    current->need_resched = 1;
+    return 0;
+}
+
+int do_kill(int pid)
+{
+    if (pid <= 0 || pid >= MAX_PID)
+    {
+        return -E_INVAL;
+    }
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    struct proc_struct *proc = find_proc(pid);
+    int ret = 0;
+    if (proc == NULL || proc == initproc || proc->state == PROC_ZOMBIE)
+    {
+        ret = -E_BAD_PROC;
+    }
+    else if (proc->flags & PF_EXITING)
+    {
+        ret = -E_KILLED;
+    }
+    else
+    {
+        proc->flags |= PF_EXITING;
+        if (proc->state == PROC_SLEEPING && (proc->wait_state & WT_INTERRUPTED))
+        {
+            wakeup_proc(proc);
+        }
+    }
+    local_intr_restore(intr_flag);
+    return ret;
+}
 
 #define __KERNEL_EXECVE(name, binary, size) ({           \
     cprintf("kernel_execve: pid = %d, name = \"%s\".\n", \
