@@ -13,14 +13,13 @@
 
 | 成员 | 实现范围 | 验证与报告 |
 | --- | --- | --- |
-| 2412439 崔迪 | 模块二的启动与装载。在 `proc.c` 负责 `alloc_proc`、`proc_init`、`kernel_thread` 的 Lab 5 适配，以及 `init_main`、`user_main`、`kernel_execve`、`do_execve`、`load_icode`。 | 验证首个用户程序从 ELF 入口执行、BSS 清零和用户栈。覆盖 `hello`、`testbss`，记录镜像嵌入与运行时装载的区别。 |
-| 2412819 李子谦 | 模块三以及子进程的退出和回收。在 `proc.c` 负责 `do_fork`、`copy_mm`、`do_wait`、`do_exit`，在 `vmm.c` 和 `pmm.c` 负责 `dup_mmap`、`copy_range`。 | 验证父子返回值、内存隔离、退出码、等待、孤儿接管和失败清理。覆盖 `exit`、`forktest`、`forktree`。 |
-| 2412852 梁靖泽 | 模块一和模块四的调度控制。负责 `trap.c` 的 `exception_handler` 及用户态 Trap 收尾、`syscall.c` 的分发与全部 `sys_*` 封装，以及 `proc.c` 的 `do_yield`、`do_kill`。 | 验证调用号与返回值、非法参数、让出和终止。覆盖 `badarg`、`yield`、`spin`、`waitkill`，牵头双重 GDB 跟踪 `ecall`、`sret` 和 QEMU TCG。 |
+| 2412439 崔迪 | **模块二 · 创建并加载第一个用户进程**。负责 `alloc_proc`、`proc_init`、`kernel_thread` 的适配，以及 `init_main`、`user_main`、`kernel_execve`、`do_execve`、`load_icode` 和 `do_wait`。 | 覆盖 `hello`、`testbss` 和 `waitpid` 回收。负责 **Challenge 2**，说明用户程序何时预加载，以及与常用操作系统加载方式的区别。 |
+| 2412819 李子谦 | **模块三 · 复制用户进程**。负责 `do_fork`、`copy_mm`、`dup_mmap` 和 `copy_range`。 | 覆盖 `forktest`、`forktree`，验证父子返回值、内存隔离和失败清理。若选做 **Challenge 1**，由李子谦负责整项 COW 实现、测试和设计报告。 |
+| 2412852 梁靖泽 | **模块一 · 用户态系统调用**和**模块四 · 其余系统调用**。负责 `exception_handler`、`syscall` 和全部 `sys_*` 封装，以及 `do_exit`、`do_yield`、`do_kill`。 | 覆盖 `exit`、`badarg`、`yield`、`spin`、`waitkill`。负责**双重 GDB 分支任务**，跟踪 `ecall`、`sret` 和 QEMU TCG。 |
 
-分工按实现、测试和调试的总工作量划分。若选做 COW，李子谦负责 fork 时的页共享和引用计数，梁靖泽负责写缺页处理，崔迪负责写入隔离测试和状态转换说明。
+每个模块和 Challenge 由一位成员负责实现、验证和报告。分工按实现、测试和调试的总工作量划分。
 
-- `init_main` 由崔迪实现，调用李子谦提供的 `do_wait`。程序映像装载失败或用户进程结束时统一走 `do_exit`。
-- 梁靖泽负责系统调用参数分发和 Trap 返回，李子谦负责 `do_wait` 的用户指针检查，崔迪负责 `do_execve` 的用户指针检查。
+- 崔迪和梁靖泽联调 `do_wait` 与 `do_exit` 的退出码、僵尸状态和父进程唤醒。模块二的装载失败路径也调用 `do_exit`。
 - 每人记录所负责部分的 spec、prompt、AI 生成代码遇到的 bug 和实际测试结果。补齐后保留 `lab5` 注释，并以负责人学号替换对应的 `YOUR CODE`。三人合并报告并共同运行 `make -C code grade`。
 
 ## 接入验证
