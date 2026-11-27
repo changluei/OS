@@ -1,3 +1,6 @@
+#include <riscv.h>
+
+//lab4 请补充你在lab4中的代码
 //LAB4 function3 2412852
     .text
     .globl switch_to

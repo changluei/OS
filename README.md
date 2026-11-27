@@ -1,43 +1,32 @@
-# 操作系统实验仓库：Lab 4 进程管理
+# 操作系统实验 Lab 5 · 用户程序
 
-当前分支为 `lab4`，从 `lab3` 的 `a8e2b7c` 创建。Lab 4 的三人分工已确定，详细任务、函数边界、协作顺序和验收要求见 [Lab 4 分工方案](report/lab4-division.md)。
+`lab5` 从 `lab4` 的 `7b67fad` 创建。`code/` 使用 `../lab2026/lab5.zip` 中的课程框架，`report/` 中的现有报告、提示词和截图属于 Lab 4。
 
-当前 `code/` 以用户提供的 `../lab4.zip` 中 `lab4_new/` 为基线，已导入全部 68 个文件，并迁入 Lab 2/3 的物理页初始化、Best-Fit 分配器和 Trap 处理。Lab 4 三个新模块的填空保留，继续按下方分工完成。来源、迁移边界和检查结果见 [框架接入记录](report/lab4-framework.md)。
+## 已接入的前序实现
+
+- Lab 2 的物理内存初始化和 Best-Fit 分配器。分配算法沿用 Lab 4，接入 Lab 5 框架的分配器自检和评分输出。
+- Lab 3 的中断分发、异常处理和寄存器恢复。恢复代码按 `sstatus.SPP` 维护返回用户态时所需的 `sscratch`，Lab 3 演示用的定时关机已移除。
+- Lab 4 的页映射与引用计数、PCB 初始化、内核线程创建、进程切换和调度。基础 `do_fork` 已通过框架的 `set_links` 接入进程树。当前 `init_main` 和 `copy_mm` 仍是 Lab 4 基础版本。
+- 启动时用临时恒等映射完成 Sv39 切换，跳到高地址后清除该映射。三级页表只在叶子项设置用户权限，避免新版 QEMU 拒绝非叶子项的保留位。
 
 ## 三人分工
 
-| 成员 | 主要任务 | 配套工作 |
-|------|----------|----------|
-| 2412439-崔迪 | `page_insert()`、`page_remove()`、`alloc_proc()`、`proc_init()` | 页映射与引用计数、PCB 分配、idle/init 初始化；本人代码的验证和文档 |
-| 2412819-李子谦 | `kernel_thread()`、`do_fork()`、`copy_thread()`、`copy_mm()` | 线程创建、内核栈与 PID、错误清理、首次运行现场；本人代码的验证和文档 |
-| 2412852-梁靖泽 | `cpu_idle()`、`schedule()`、`proc_run()`、`switch_to()` | 调度策略、临界区、Sv39 页表切换和寄存器上下文；本人代码的验证和文档 |
+| 成员 | 实现范围 | 验证与报告 |
+| --- | --- | --- |
+| 2412439 崔迪 | 模块二的启动与装载。在 `proc.c` 负责 `alloc_proc`、`proc_init`、`kernel_thread` 的 Lab 5 适配，以及 `init_main`、`user_main`、`kernel_execve`、`do_execve`、`load_icode`。 | 验证首个用户程序从 ELF 入口执行、BSS 清零和用户栈。覆盖 `hello`、`testbss`，记录镜像嵌入与运行时装载的区别。 |
+| 2412819 李子谦 | 模块三以及子进程的退出和回收。在 `proc.c` 负责 `do_fork`、`copy_mm`、`do_wait`、`do_exit`，在 `vmm.c` 和 `pmm.c` 负责 `dup_mmap`、`copy_range`。 | 验证父子返回值、内存隔离、退出码、等待、孤儿接管和失败清理。覆盖 `exit`、`forktest`、`forktree`。 |
+| 2412852 梁靖泽 | 模块一和模块四的调度控制。负责 `trap.c` 的 `exception_handler` 及用户态 Trap 收尾、`syscall.c` 的分发与全部 `sys_*` 封装，以及 `proc.c` 的 `do_yield`、`do_kill`。 | 验证调用号与返回值、非法参数、让出和终止。覆盖 `badarg`、`yield`、`spin`、`waitkill`，牵头双重 GDB 跟踪 `ecall`、`sret` 和 QEMU TCG。 |
 
-按代码量、实现难点和验证范围综合分配，每人负责四个必做函数。`proc.c` 中崔迪负责 `alloc_proc()`、`proc_init()`，李子谦负责四个线程创建函数，梁靖泽负责 `cpu_idle()`、`proc_run()`。整体联调、课程验收与报告公共部分由三人共同完成。Challenge 1、2 均为文字思考题，没有新增代码要求，暂不指定负责人，也不计入本轮工作量。具体共享接口约定见分工方案。
+分工按实现、测试和调试的总工作量划分。若选做 COW，李子谦负责 fork 时的页共享和引用计数，梁靖泽负责写缺页处理，崔迪负责写入隔离测试和状态转换说明。
 
-## 进度
+- `init_main` 由崔迪实现，调用李子谦提供的 `do_wait`。程序映像装载失败或用户进程结束时统一走 `do_exit`。
+- 梁靖泽负责系统调用参数分发和 Trap 返回，李子谦负责 `do_wait` 的用户指针检查，崔迪负责 `do_execve` 的用户指针检查。
+- 每人记录所负责部分的 spec、prompt、AI 生成代码遇到的 bug 和实际测试结果。补齐后保留 `lab5` 注释，并以负责人学号替换对应的 `YOUR CODE`。三人合并报告并共同运行 `make -C code grade`。
 
-- [x] 创建并切换到 `lab4` 分支。
-- [x] 核对三人的姓名、学号，完成十二个必做函数及验证、文档职责分工。
-- [x] 导入 Lab 4 课程框架，迁移 Lab 2/3 的必要实现。
-- [ ] 完成模块一：虚拟内存页操作。
-- [ ] 完成模块二：进程创建与初始化。
-- [x] 完成模块三：进程调度与上下文切换（2412852，2026-11-20）。
-- [ ] 三人分别完成各自代码的规格、提示词和调试记录。
-- [ ] 整理 Challenge 思考题；当前暂不分配负责人，不计入编程工作量。
-- [ ] 完成 Lab 4 整体构建、运行、课程验收与正式报告。
+## 接入验证
 
-梁靖泽已完成本人四个函数；两份 Lab 0.5 四段式提示词由主 agent 编写并分别发送给代码子 agent，代码完成后由主 agent 补齐本人报告与验证记录。详见 [提示词](report/prompt.md)、[模块三报告](report/report.md#功能模块三调度与上下文切换)及 [真实验证日志](report/logs/2412852-lab4-tests.txt)。2026-11-20 使用命令行 GCC 兼容选项和 QEMU 4.1.1 完成内核构建、idle/init 首次运行及课程评分 **30/30**；评分注入只在临时副本进行，未修改课程工具或队友代码。其他成员文档、Challenge、截图和正式报告公共部分仍待小组整理，不能视为全部交付完成。
+用 RISC-V GCC 10.2 交叉编译时，正式构建停在待填写的 `sys_*` 处理函数。使用临时测试桩链接后，在 QEMU 11.0.2 上通过内存与页表自检、课程的 Process Create 检查，以及首个内核线程和连续两次用户态 Trap 的往返验证。完整评分等待 Lab 5 各模块实现。
 
-## 实验依据与材料
+在 QEMU 11.0.2 上，课程 Makefile 的 `-device loader` 启动参数未设置 OpenSBI 的下一跳地址。接入验证使用 `qemu-system-riscv64 -machine virt -nographic -bios default -kernel bin/ucore.img`。
 
-- [课程 Lab 4](http://oslab.mobisys.top/lab2026/_book/lab4/lab4.html)、[练习](http://oslab.mobisys.top/lab2026/_book/lab4/lab4_2_1_exercises.html)、[报告要求](http://oslab.mobisys.top/lab2026/_book/lab4/lab4_5_labs_requirement.html)。本地同步副本为同级 `../lab2026/_book/lab4/`，本次分工依据 2026-11-11 下载的内容。
-- [Lab 4 分工方案](report/lab4-division.md)：本阶段的任务与交付约定。
-- [Lab 4 框架接入记录](report/lab4-framework.md)：压缩包来源、前置代码迁移、框架差异及构建结果。
-- [Lab 3 仓库说明](report/archive/lab3-readme.md)：前置代码、开发环境和历史验收说明。
-- [现有实验报告](report/report.md)、[现有提示词](report/prompt.md)、`report/logs/` 和 `report/images/`：报告和提示词已有 Lab 4 成员章节，日志同时保留历史检查和本次验证，截图仍待小组整理。
-
-网站练习页已提示：`libs/riscv.h` 中的旧 `lsatp()` 是 Sv32 遗留实现，不能用于本实验的 Sv39 页表切换。模块三应参考 Lab 4 框架 `kern/mm/pmm.c` 的 `enable_paging()`，正确设置 `satp` 并刷新 TLB。
-
-2026-11-11 已在现有 Docker 环境执行构建：源码编译与汇编完成，链接因 Lab 4 尚未实现的 `page_insert()`、`page_remove()`、`proc_init()`、`cpu_idle()` 而失败。详见 [构建日志](report/logs/20261111-lab4-framework-build.txt)；当时尚未生成可运行内核，运行与课程评分待三个模块完成后执行。
-
-以上为 2026-11-11 接入时的历史状态；本次可运行镜像及 30/30 验收结果以 2026-11-20 的验证日志为准。正式 init 返回后仍进入框架 `do_exit()` 的占位 panic，本次未扩展进程退出功能。
+[Lab 5 练习](../lab2026/_book/lab5/lab5_2_1_exercises.html) · [GDB 分支任务](../lab2026/_book/lab5/lab5_4_gdb_ecall.html) · [实验报告要求](../lab2026/_book/lab5/lab5_5_lab_requirement.html)
