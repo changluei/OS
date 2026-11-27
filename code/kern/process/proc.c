@@ -1,5 +1,6 @@
 #include <proc.h>
 #include <kmalloc.h>
+#include <kmonitor.h>
 #include <string.h>
 #include <sync.h>
 #include <pmm.h>
@@ -84,7 +85,7 @@ void switch_to(struct context *from, struct context *to);
 
 //lab4 请补充你在lab4中的代码
 
-//lab5 function2 YOUR CODE update alloc_proc
+//lab5 function2 2412439 update alloc_proc
 //LAB4 function2 2412439
 static struct proc_struct *
 alloc_proc(void)
@@ -244,7 +245,7 @@ find_proc(int pid)
     return NULL;
 }
 
-//lab5 function2 YOUR CODE update kernel_thread
+//lab5 function2 2412439 update kernel_thread
 //LAB4 function2 2412819
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
@@ -335,7 +336,287 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc)
 
 
 
-//lab5 function2 YOUR CODE
+//lab5 function2 2412439
+static bool
+mapped_mem_check(struct mm_struct *mm, uintptr_t addr, size_t len, bool write)
+{
+    if (!user_mem_check(mm, addr, len, write))
+    {
+        return 0;
+    }
+    if (mm != NULL)
+    {
+        // A stack VMA includes pages beyond the initially mapped user stack.
+        for (uintptr_t va = ROUNDDOWN(addr, PGSIZE); va < addr + len; va += PGSIZE)
+        {
+            pte_t *pte = get_pte(mm->pgdir, va, 0);
+            if (pte == NULL || (*pte & (PTE_V | PTE_U)) != (PTE_V | PTE_U))
+            {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int
+load_elf_segment(struct mm_struct *mm, const unsigned char *binary,
+                 const struct proghdr *ph)
+{
+    uint32_t vm_flags = 0, perm = PTE_U;
+    if (ph->p_flags & ELF_PF_R)
+    {
+        vm_flags |= VM_READ;
+        perm |= PTE_R;
+    }
+    if (ph->p_flags & ELF_PF_W)
+    {
+        vm_flags |= VM_WRITE;
+        perm |= PTE_R | PTE_W;
+    }
+    if (ph->p_flags & ELF_PF_X)
+    {
+        vm_flags |= VM_EXEC;
+        perm |= PTE_X;
+    }
+    if (vm_flags == 0)
+    {
+        return -E_INVAL_ELF;
+    }
+
+    int ret = mm_map(mm, ph->p_va, ph->p_memsz, vm_flags, NULL);
+    if (ret != 0)
+    {
+        return ret;
+    }
+
+    uintptr_t file_end = ph->p_va + ph->p_filesz;
+    uintptr_t mem_end = ph->p_va + ph->p_memsz;
+    for (uintptr_t va = ROUNDDOWN(ph->p_va, PGSIZE); va < mem_end; va += PGSIZE)
+    {
+        struct Page *page = pgdir_alloc_page(mm->pgdir, va, perm);
+        if (page == NULL)
+        {
+            return -E_NO_MEM;
+        }
+        unsigned char *kva = page2kva(page);
+        memset(kva, 0, PGSIZE);
+        uintptr_t start = va < ph->p_va ? ph->p_va : va;
+        uintptr_t end = va + PGSIZE < file_end ? va + PGSIZE : file_end;
+        if (start < end)
+        {
+            size_t file_offset = ph->p_offset + (start - ph->p_va);
+            memcpy(kva + (start - va), binary + file_offset, end - start);
+        }
+    }
+    return 0;
+}
+
+static int
+load_icode(unsigned char *binary, size_t size)
+{
+    struct elfhdr elf;
+    if (size < sizeof(elf))
+    {
+        return -E_INVAL_ELF;
+    }
+    memcpy(&elf, binary, sizeof(elf));
+    // The Lab5 linker produces little-endian, executable ELF64 images for RISC-V.
+    if (elf.e_magic != ELF_MAGIC || elf.e_elf[0] != 2 || elf.e_elf[1] != 1 ||
+        elf.e_type != 2 || elf.e_machine != 243 || elf.e_version != 1 ||
+        elf.e_ehsize != sizeof(elf) || elf.e_phentsize != sizeof(struct proghdr) ||
+        elf.e_phoff < sizeof(elf) || elf.e_phoff > size ||
+        elf.e_phnum > (size - elf.e_phoff) / sizeof(struct proghdr) ||
+        (elf.e_entry & 1) != 0)
+    {
+        return -E_INVAL_ELF;
+    }
+
+    struct mm_struct *mm = mm_create();
+    if (mm == NULL)
+    {
+        return -E_NO_MEM;
+    }
+    int ret = setup_pgdir(mm);
+    if (ret != 0)
+    {
+        mm_destroy(mm);
+        return ret;
+    }
+
+    const uintptr_t stack_base = USTACKTOP - USTACKSIZE;
+    uintptr_t previous_end = USERBASE;
+    bool executable_entry = 0;
+    for (size_t i = 0; i < elf.e_phnum; i++)
+    {
+        struct proghdr ph;
+        memcpy(&ph, binary + elf.e_phoff + i * sizeof(ph), sizeof(ph));
+        if (ph.p_type != ELF_PT_LOAD)
+        {
+            continue;
+        }
+        if (ph.p_filesz > ph.p_memsz || ph.p_offset > size ||
+            ph.p_filesz > size - ph.p_offset)
+        {
+            ret = -E_INVAL_ELF;
+            goto bad_load;
+        }
+        if (ph.p_memsz == 0)
+        {
+            continue;
+        }
+        // Check the page-rounded VMA bounds before inserting the segment.
+        if (ph.p_va < previous_end || ph.p_va >= stack_base ||
+            ph.p_memsz > stack_base - ph.p_va)
+        {
+            ret = -E_INVAL_ELF;
+            goto bad_load;
+        }
+        uintptr_t end = ph.p_va + ph.p_memsz;
+        if ((ph.p_flags & ELF_PF_X) && ph.p_va <= elf.e_entry && elf.e_entry < end)
+        {
+            executable_entry = 1;
+        }
+        previous_end = ROUNDUP(end, PGSIZE);
+        ret = load_elf_segment(mm, binary, &ph);
+        if (ret != 0)
+        {
+            goto bad_load;
+        }
+    }
+    if (!executable_entry)
+    {
+        ret = -E_INVAL_ELF;
+        goto bad_load;
+    }
+
+    ret = mm_map(mm, stack_base, USTACKSIZE, VM_READ | VM_WRITE | VM_STACK, NULL);
+    if (ret != 0)
+    {
+        goto bad_load;
+    }
+    for (uintptr_t va = USTACKTOP - 4 * PGSIZE; va < USTACKTOP; va += PGSIZE)
+    {
+        struct Page *page = pgdir_alloc_page(mm->pgdir, va, PTE_U | PTE_R | PTE_W);
+        if (page == NULL)
+        {
+            ret = -E_NO_MEM;
+            goto bad_load;
+        }
+        memset(page2kva(page), 0, PGSIZE);
+    }
+
+    // The source ELF can belong to the address space being replaced.
+    struct mm_struct *old_mm = current->mm;
+    mm_count_inc(mm);
+    current->mm = mm;
+    current->pgdir = PADDR(mm->pgdir);
+    lsatp(current->pgdir);
+    flush_tlb();
+    if (old_mm != NULL && mm_count_dec(old_mm) == 0)
+    {
+        exit_mmap(old_mm);
+        put_pgdir(old_mm);
+        mm_destroy(old_mm);
+    }
+    asm volatile("fence.i" ::: "memory");
+
+    struct trapframe *tf = current->tf;
+    uintptr_t status = (tf->status | SSTATUS_SPIE) & ~(SSTATUS_SPP | SSTATUS_SIE);
+    memset(tf, 0, sizeof(*tf));
+    tf->gpr.sp = USTACKTOP;
+    tf->epc = elf.e_entry;
+    tf->status = status;
+    return 0;
+
+bad_load:
+    exit_mmap(mm);
+    put_pgdir(mm);
+    mm_destroy(mm);
+    return ret;
+}
+
+int
+do_execve(const char *name, size_t len, unsigned char *binary, size_t size)
+{
+    struct mm_struct *mm = current->mm;
+    char local_name[PROC_NAME_LEN + 1] = {0};
+    len = len < PROC_NAME_LEN ? len : PROC_NAME_LEN;
+    if (size == 0 || !mapped_mem_check(mm, (uintptr_t)binary, size, 0) ||
+        (len != 0 && !mapped_mem_check(mm, (uintptr_t)name, len, 0)))
+    {
+        return -E_INVAL;
+    }
+    if (len != 0)
+    {
+        memcpy(local_name, name, len);
+    }
+    int ret = load_icode(binary, size);
+    if (ret == 0)
+    {
+        set_proc_name(current, local_name);
+    }
+    return ret;
+}
+
+int
+do_wait(int pid, int *code_store)
+{
+    if (pid < 0 || pid >= MAX_PID)
+    {
+        return -E_BAD_PROC;
+    }
+    while (1)
+    {
+        bool intr_flag;
+        local_intr_save(intr_flag);
+        if (current->flags & PF_EXITING)
+        {
+            local_intr_restore(intr_flag);
+            return do_exit(-E_KILLED);
+        }
+
+        struct proc_struct *child = pid == 0 ? current->cptr : find_proc(pid);
+        if (child == NULL || child->parent != current)
+        {
+            local_intr_restore(intr_flag);
+            return -E_BAD_PROC;
+        }
+        if (code_store != NULL &&
+            !mapped_mem_check(current->mm, (uintptr_t)code_store, sizeof(*code_store), 1))
+        {
+            local_intr_restore(intr_flag);
+            return -E_INVAL;
+        }
+        if (pid == 0)
+        {
+            while (child != NULL && child->state != PROC_ZOMBIE)
+            {
+                child = child->optr;
+            }
+        }
+        if (child != NULL && child->state == PROC_ZOMBIE)
+        {
+            if (code_store != NULL &&
+                !copy_to_user(current->mm, code_store, &child->exit_code, sizeof(*code_store)))
+            {
+                local_intr_restore(intr_flag);
+                return -E_INVAL;
+            }
+            unhash_proc(child);
+            remove_links(child);
+            local_intr_restore(intr_flag);
+            put_kstack(child);
+            kfree(child);
+            return 0;
+        }
+
+        current->state = PROC_SLEEPING;
+        current->wait_state = WT_CHILD;
+        schedule();
+        local_intr_restore(intr_flag);
+    }
+}
 
 
 //lab5 function3 YOUR CODE
@@ -407,15 +688,53 @@ bad_fork_cleanup_proc:
 #define KERNEL_EXECVE2(x, xstart, xsize) __KERNEL_EXECVE2(x, xstart, xsize)
 
 
-//lab5 function2 YOUR CODE
+//lab5 function2 2412439
+static int
+kernel_execve(const char *name, unsigned char *binary, size_t size)
+{
+    int ret = do_execve(name, strlen(name), binary, size);
+    if (ret != 0)
+    {
+        return ret;
+    }
+
+    // Kernel threads already have a trapframe at the top of their kernel stack.
+    intr_disable();
+    forkrets(current->tf);
+    panic("forkrets returned from kernel_execve");
+}
+
+static int
+user_main(void *arg)
+{
+#ifdef TEST
+    return KERNEL_EXECVE2(TEST, TESTSTART, TESTSIZE);
+#else
+    return KERNEL_EXECVE(exit);
+#endif
+}
 
 static int
 init_main(void *arg)
 {
-    cprintf("this initproc, pid = %d, name = \"%s\"\n", current->pid, get_proc_name(current));
-    cprintf("To U: \"%s\".\n", (const char *)arg);
-    cprintf("To U: \"en.., Bye, Bye. :)\"\n");
-    return 0;
+    size_t free_pages_before = nr_free_pages();
+    int pid = kernel_thread(user_main, NULL, 0);
+    if (pid <= 0)
+    {
+        panic("cannot create user_main: %d.", pid);
+    }
+    while (do_wait(0, NULL) == 0)
+    {
+    }
+
+    cprintf("all user-mode processes have quit.\n");
+    assert(current == initproc && initproc->cptr == NULL && nr_process == 2);
+    assert(nr_free_pages() == free_pages_before);
+    cprintf("init check memory pass.\n");
+    while (1)
+    {
+        kmonitor(NULL);
+    }
 }
 
 //LAB4 function2 2412439
@@ -440,7 +759,7 @@ void proc_init(void)
     nr_process++;
     current = idleproc;
 
-    int pid = kernel_thread(init_main, "Hello world!!", 0);
+    int pid = kernel_thread(init_main, NULL, 0);
     if (pid <= 0)
     {
         panic("cannot create initproc: %d.\n", pid);

@@ -325,7 +325,7 @@ void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end)
     assert(USER_ACCESS(start, end));
 
     uintptr_t d1start, d0start;
-    int free_pt, free_pd0;
+    int free_pt;
     pde_t *pd0, *pt, pde1, pde0;
     d1start = ROUNDDOWN(start, PDSIZE);
     d0start = ROUNDDOWN(start, PTSIZE);
@@ -342,7 +342,6 @@ void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end)
         {
             pd0 = page2kva(pde2page(pde1));
             // try to free all page tables
-            free_pd0 = 1;
             do
             {
                 pde0 = pd0[PDX0(d0start)];
@@ -364,12 +363,15 @@ void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end)
                         pd0[PDX0(d0start)] = 0;
                     }
                 }
-                else
-                    free_pd0 = 0;
                 d0start += PTSIZE;
             } while (d0start != 0 && d0start < d1start + PDSIZE && d0start < end);
-            // free level 0 page directory only when all pde0s in it are already invalid
-            if (free_pd0)
+            // Other VMAs can still have page tables under this root entry.
+            size_t i = 0;
+            while (i < NPDEENTRY && !(pd0[i] & PTE_V))
+            {
+                i++;
+            }
+            if (i == NPDEENTRY)
             {
                 free_page(pde2page(pde1));
                 pgdir[PDX1(d1start)] = 0;
